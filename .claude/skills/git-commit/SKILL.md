@@ -1,170 +1,281 @@
 ---
 name: git-commit
-description: 智能提交 - 自动分析暂存文件，生成符合 Conventional Commits 规范的 message，支持 issue 关联、预检和交互式选择
+description: 智能提交 - 分析暂存内容，按项目规则生成和校验 commit message，执行安全预检，并根据统一远程协作策略处理同步
 argument-hint: "[message]"
 license: MIT
 ---
 
 # git-commit
 
-智能提交助手，自动分析暂存文件内容，生成规范的 commit message，并执行预检确保提交安全。
+智能提交助手。只提交经过明确确定的暂存内容，生成或校验 commit message，执行安全预检，并在远程协作策略允许时处理远程同步。
 
 ## Step 1: 环境检查与规则加载
 
-检查当前目录是否为 git 仓库，并加载项目规则配置。
+所有命令都必须检查退出码。命令失败时立即停止当前阶段，不把空输出当作成功。
 
-### Step 1a: Git 仓库验证
+### Step 1a: Git 仓库和操作状态
 
-执行 `git status` 验证当前目录是 git 仓库。如果不是，提示用户并终止。
+1. 执行 git rev-parse --show-toplevel，取得仓库根目录；失败时提示原因并终止。
+2. 后续 Git 命令从仓库根目录执行。
+3. 执行 git status --short --branch，记录当前分支和工作区状态。
+4. 检查以下特殊状态：
+   - git diff --cached --name-only --diff-filter=U 是否有未解决的暂存冲突；
+   - MERGE_HEAD、CHERRY_PICK_HEAD、REVERT_HEAD、REBASE_HEAD 是否存在；
+   - git status 是否报告 merge、rebase、cherry-pick 或 revert 正在进行。
+5. 如果存在冲突或未完成 Git 操作，停止普通提交流程，报告状态和文件，不自动 continue、abort、reset 或 rebase。
 
-### Step 1b: 规则加载
+### Step 1b: 项目规则加载
 
-检查 `.claude/rules.json` 是否存在：
-- **存在**：读取并解析 `git-commit` 相关规则
-- **不存在**：读取 `/git-rules` 并创建默认规则文件
+配置文件路径为 .claude/git-claude-rules.json。
 
-提取以下规则（缺失时使用默认值）：
-- `when_staging_empty`：暂存区为空时的行为（默认：`"ask"`）
-- `auto_message`：是否自动生成 commit message（默认：`true`）
-- `message_style`：commit message 风格（默认：`"conventional"`）
+1. 配置不存在时，内部调用 /git-rules init --internal。初始化过程不向用户展示；初始化失败时停止当前任务，只报告规则配置无法初始化。
+2. 配置存在时，先读取文件。读取失败时立即停止，不覆盖文件。
+3. 如果 JSON 解析失败或整体结构无效，内部调用 /git-rules repair --internal。修复失败时停止；修复成功后重新读取和校验。
+4. 如果单个规则缺失或 value 非法，内部调用 /git-rules repair SCOPE KEY --internal。修复成功后重新读取和校验。
+5. 从以下精确路径读取规则值：
+   - rules.project.repository_relation_mode.value
+   - rules.project.large_file_size_limit.value
+   - rules["git-commit"].empty_staging_mode.value
+   - rules["git-commit"].commit_message_mode.value
+   - rules["git-commit"].post_commit_push_mode.value
+6. 规则缺失或非法时不得只在内存中静默使用默认值；必须先完成对应的内部修复。
+7. 计算本次有效远程策略：
+   - unconfigured：首次进入远程同步时向用户询问并保存选择；
+   - independent_repositories：使用 git-commit 自身的 post_commit_push_mode；
+   - same_repository：使用统一的 managed_safe_sync 策略。该策略覆盖本次 post_commit_push_mode 的有效行为，但保留其配置值，供以后切换回 independent_repositories 时使用。
 
 ## Step 2: 暂存区分析
 
-分析当前暂存区状态，确定提交范围。
+### Step 2a: 确定提交范围
 
-### Step 2a: 检查暂存区
+1. 执行 git diff --cached --name-status -z，检查命令是否成功。
+2. 输出为空才表示暂存区为空。
+3. 暂存区为空时按 empty_staging_mode 处理：
+   - prompt：询问“是、否、总是、从不”。
+     - 是：本次从仓库根目录执行 git add --all -- .；
+     - 否：终止；
+     - 总是：内部调用 /git-rules set git-commit empty_staging_mode stage_all，再执行 git add --all -- .；
+     - 从不：内部调用 /git-rules set git-commit empty_staging_mode abort，然后终止。
+   - stage_all：从仓库根目录执行 git add --all -- .；
+   - abort：报告暂存区为空并终止。
+4. git add 失败时停止，保留已有暂存状态，报告原始错误。
+5. 暂存操作完成后重新执行 git diff --cached --name-status -z，显示实际暂存文件清单。内部创建的规则配置属于项目文件；如果用户选择暂存全部，它会按实际状态进入暂存清单。
+6. 重新检查清单为空和未解决冲突；为空或存在冲突时终止。
 
-执行 `git diff --cached --stat` 获取暂存文件列表。
+### Step 2b: 文件类型、大小和安全检查
 
-如果暂存区为空：
-- 根据 `when_staging_empty` 规则决定行为：
-  - `"ask"`：询问用户是否要 `git add` 所有更改
-  - `"always_stage_all"`：自动执行 `git add .`
-  - `"always_error"`：提示暂存区为空并终止
+使用 Git index 中的暂存内容检查，不以工作区未暂存版本代替暂存版本。
 
-### Step 2b: 文件分析
+1. 识别新增、修改、删除、重命名、复制和二进制文件。
+2. 删除文件不扫描删除内容；重命名同时检查旧路径和新路径的敏感文件名。
+3. 二进制文件跳过文本内容扫描，但继续执行文件名和大小检查，并显示文件名、状态和大小。
+4. 无法读取暂存 blob、无法识别编码或扫描器执行失败时停止提交，不把失败视为未发现问题。
 
-对暂存文件进行分析：
-- 识别变更类型（新增/修改/删除/重命名）
-- 检测大文件（>1MB）并警告
-- 检测二进制文件并提示
-- 扫描敏感信息（密钥、密码、token 等）
+#### 大文件检测
 
-如果检测到问题，询问用户是否继续。
+large_file_size_limit 必须是正数，格式为数字加 B、KB、MB 或 GB，单位不区分大小写，按 1024 进位计算。例如 1MB 等于 1048576 字节。
 
-## Step 3: 生成 Commit Message
+- 暂存 blob 大小超过阈值：警告并询问是否继续；
+- 所有非删除暂存 blob 总大小超过阈值的 10 倍：警告并询问是否继续；
+- 使用 git check-attr filter -- PATH 检查实际路径是否配置 Git LFS；
+- 如果匹配 LFS，提示应由 LFS 管理；不自动转换文件或修改 .gitattributes；
+- 用户拒绝或取消时终止，保留当前暂存状态。
 
-如果用户提供了`$message`，则跳过此步
-根据暂存内容生成符合规范的 commit message。
+#### 敏感文件名检查
 
-### Step 3a: 分析变更内容
+按不区分大小写的完整路径或文件名匹配：
 
-执行 `git diff --cached` 获取详细变更，分析：
-- 主要变更类型（feat/fix/docs/style/refactor/test/chore）
-- 影响范围（模块/组件）
-- 变更摘要
+- 直接阻止：私钥文件（*.key、*.pem、*.p12、*.pfx、*.jks）、凭据文件（credentials*）、环境文件（.env 及其变体）、id_rsa、id_ed25519；
+- 警告并确认：文件名包含 secret 或 password 的普通文件、*.pub 公钥文件；
+- 删除敏感文件不按“新增敏感文件”阻止，但仍在报告中说明删除动作。
 
-### Step 3b: 识别关联信息
+直接阻止时不提供“确认后继续”选项；警告级别必须由用户明确选择继续或终止。
 
-扫描暂存文件和变更内容，识别：
-- Issue 编号（如 `#123`、`PROJ-456`）
-- Ticket 编号（如 `JIRA-789`）
-- 相关的 PR 引用
+#### 敏感信息内容扫描
 
-### Step 3c: 生成消息
+内容扫描必须针对 git show :PATH 输出的暂存版本，使用 rg --pcre2 -n -I 或等价的 PCRE2 扫描器。正则不得再经过 Markdown 表格转义。rg 返回 0 表示匹配，1 表示无匹配，2 或更高值表示扫描失败。执行器必须丢弃原始匹配行，只保留文件路径、行号和规则名称。
 
-根据 `message_style` 规则生成消息：
+阻止级别模式：
 
-**Conventional Commits 格式**（默认）：
-```
-<type>(<scope>): <description>
+    AWS Access Key: \b(?:AKIA|ASIA)[0-9A-Z]{16}\b
+    AWS Secret Key: (?i)\b(?:aws_secret_access_key|aws_secret)\s*[:=]\s*['"]?[A-Za-z0-9/+=]{40}['"]?
+    GitHub Token: \b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,}\b
+    Private Key: -----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----
+    Stripe Secret Key: \b(?:sk|rk)_(?:test|live)_[0-9A-Za-z]{10,}\b
+    Slack Token: \bxox[bapors]-[0-9A-Za-z-]{10,}\b
 
-[optional body]
+警告级别模式：
 
-[optional footer(s)]
-```
+    Generic API Key: (?i)\b(?:api[_-]?key|apikey)\s*[:=]\s*['"][0-9A-Za-z]{32,}['"]
+    Password in Code: (?i)\b(?:password|passwd|pwd)\s*[:=]\s*['"][^'"]{8,}['"]
+    Connection String: (?i)\b(?:mysql|postgres(?:ql)?|mongodb(?:\+srv)?)://\S{20,}
+    JWT Token: \beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b
+    Generic Secret: (?i)\b(?:secret|token)\s*[:=]\s*['"][0-9A-Za-z_-]{16,}['"]
+    Stripe Publishable Key: \bpk_(?:test|live)_[0-9A-Za-z]{10,}\b
 
-**Simple 格式**：
-```
-<description>
-```
+扫描结果只显示文件路径、行号和类型，不显示完整匹配值；不得直接向用户展示扫描器原始输出。
 
-如果用户提供了 `[message]` 参数，使用用户提供的内容作为描述部分。
+- 阻止级别：立即终止，不允许用户绕过；
+- 警告级别：显示类型和位置，询问是否继续；
+- 用户拒绝或取消：终止并保留暂存状态。
+
+## Step 3: 生成或校验 Commit Message
+
+从 $ARGUMENTS 读取原始参数。不得通过 shell eval 解释用户输入。
+
+### Step 3a: 用户提供 message
+
+如果 $ARGUMENTS 非空，将其作为用户指定的完整 message。只跳过自动生成，不跳过：
+
+- 标题、body、footer 结构解析；
+- Conventional 或 custom 规则校验；
+- 最终 message 展示；
+- 用户确认。
+
+多行内容必须原样保留，除非用户在“修改后使用”中明确修改。
+
+### Step 3b: 自动分析变更
+
+仅当用户没有提供 message 时：
+
+1. 执行 git diff --cached 获取暂存差异，命令失败则停止。
+2. 分析变更类型、影响范围和摘要。
+3. 识别暂存路径和差异中的 issue、ticket 和 PR 引用。
+4. 使用 #[0-9]+ 识别 issue/PR 编号，使用 [A-Z][A-Z0-9]+-[0-9]+ 识别 ticket 编号；结果去重后只作为关联信息展示。自动生成的 conventional_full message 可以追加中性的 Refs footer，不自动生成 Fixes、Closes 或 Resolves。
+
+### Step 3c: Message 风格
+
+当 commit_message_mode 为 unconfigured 时，无论用户是否提供 message，都先向用户介绍并询问：
+
+- conventional_simple：单行 TYPE[(SCOPE)]: DESCRIPTION；
+- conventional_full：Conventional 标题、空行、body 和可选 footer；
+- custom：读取 .claude/sample/commit-message.md。
+
+用户选择“始终使用”时，内部调用 /git-rules set git-commit commit_message_mode VALUE；选择“仅本次”时不写入规则。
+
+Conventional type 使用 feat、fix、docs、style、refactor、perf、test、build、ci、chore 或 revert。标题必须有合法 type、冒号和非空描述。
+
+custom 文件缺失、为空或无法读取时停止，并提示需要配置该文件；不在提交流程中自动创建或猜测 custom 规范。
 
 ### Step 3d: 展示并确认
 
-向用户展示生成的 commit message，询问：
-- 直接使用
-- 修改后使用
-- 重新生成
+展示最终完整 message、检测到的关联信息以及是否包含 body/footer，然后询问：
+
+- 直接使用；
+- 修改后使用；
+- 重新生成（仅自动生成的 message 可用）；
+- 取消。
+
+修改后必须重新校验；取消则终止。
 
 ## Step 4: 执行提交
 
-确认消息后执行 git commit。
+### Step 4a: 构建提交输入
 
-### Step 4a: 构建提交命令
+不得拼接 shell 命令字符串，也不得手工转义 message。
 
-根据确认的消息构建命令：
-- 如果有 body/footer：使用 `git commit -m "title" -m "body"`
-- 如果只有一行：使用 `git commit -m "message"`
+- 优先使用进程参数数组；
+- 需要保留多行 message 时使用 git commit --file=-，通过标准输入传入完整 message；
+- message 中的引号、反斜杠、美元符号、反引号、感叹号和换行都按原文传递。
 
-### Step 4b: 执行并报告
+### Step 4b: Pre-commit 检查
 
-执行提交命令，完成后显示：
-- 提交哈希
-- 提交消息
-- 变更文件统计
+1. 执行 git rev-parse --git-path hooks，取得实际 hooks 目录；相对路径按仓库根目录解析。
+2. 读取 git config --get core.hooksPath；退出码为 1 表示未配置，其他失败必须停止；若存在，以实际配置为准。
+3. 检查实际 hooks 目录中的 pre-commit 文件及当前操作系统下的可执行状态。
+4. 检查 .pre-commit-config.yaml 和 package.json 只作为辅助提示，不把文件存在等同于 hook 已安装。
+5. 如果检测到 hook，告知用户提交时会自动运行；不因提示重复询问 message。
+6. 除非用户或项目要求，否则不要将你自己添加到作者或者合作者一栏中
 
-## Step 5: 提交远程仓库
+### Step 4c: 执行并报告
 
-### Step 5a：检测远程仓库
+1. 执行提交并检查退出码。
+2. 非零退出时立即停止，不进入 Step 5；显示原始错误，不自动 pull、rebase、reset 或重试。
+3. 成功后执行 git rev-parse HEAD 和 git show --stat --oneline --summary HEAD，报告实际提交哈希、message 和文件统计。
+4. 检查提交后的工作区变化。hook 产生的未暂存或未跟踪变化只报告，不自动加入下一次提交。
 
-检查该项是否连接了远程仓库。
-如果没有，跳过此步。
-如果有，询问用户是否同步到远程仓库。
+## Step 5: 提交后的远程同步
 
-## Step 6: 提交后建议
+只有 Step 4 成功后才能进入本步骤。
 
-根据当前仓库状态，提供下一步操作建议：
-- 如果有未暂存更改：建议 `git add` 或创建新提交
-- 如果当前分支有 upstream：建议 `git push`
-- 如果没有 upstream：建议设置 upstream 并推送
-- 如果有未推送的提交：提醒推送
+### Step 5a: 解析远程上下文
+
+1. 执行 git remote，命令失败时报告错误并结束远程阶段；输出为空时报告未配置远程仓库并进入 Step 6。
+2. 执行 git branch --show-current：
+   - 为空表示 detached HEAD；报告本地 commit 成功，跳过自动远程操作；
+   - 非空时继续。
+3. 执行 git rev-parse --abbrev-ref --symbolic-full-name '@{u}'；退出码为 1 表示没有 upstream，其他失败必须报告。存在 upstream 时，再通过当前分支的 branch.BRANCH.remote 和 branch.BRANCH.merge 配置取得明确的 remote 和 branch，并执行 git remote get-url --push REMOTE 检查对应 push URL；push URL 缺失或命令失败时停止远程阶段。
+4. 有 upstream 时使用 upstream 的 remote 和 branch。
+5. 没有 upstream 时：
+   - same_repository：若只有一个可用 remote 且存在 push URL，使用当前分支名作为远程分支候选，并按 Step 5c 自动设置 upstream；多个可用 remote 时询问用户，用户取消则停止远程阶段；没有可用 remote 时跳过远程阶段；
+   - independent_repositories：不猜测目标；需要 push 时报告缺少 upstream 并停止自动 push。
+6. 所有后续 fetch 和 push 都必须使用明确的 remote、branch 和 refspec。
+
+### Step 5b: 选择有效远程策略
+
+repository_relation_mode 为 unconfigured 时，向用户介绍：
+
+- 视为独立仓库：本地和远程分别处理，遵守 post_commit_push_mode；
+- 视为同一仓库：将远程视为本地仓库协作的一部分，由统一 managed_safe_sync 策略自动处理远程事项。
+
+用户选择后，内部调用 /git-rules set project repository_relation_mode VALUE，再重新计算有效策略。
+
+effective policy：
+
+- independent_repositories：
+  - prompt：询问是否 push，并提供是、否、总是、从不；是和总是都使用明确的 REMOTE HEAD:BRANCH refspec，push 失败时停止；
+  - always：有明确 upstream 时自动 push；没有 upstream 时停止并报告；
+  - never：不自动 push，明确报告尚未同步。
+- same_repository：
+  - 提交后先更新远端状态；
+  - 唯一 remote 且无 upstream 时自动设置 upstream；
+  - 只有确认远端不会覆盖或分叉本地本次 commit 时才自动 push；
+  - 远端存在无法安全合并的新历史时停止，不自动 pull 或 rebase；
+  - 本次 post_commit_push_mode 的存储值保留，但不覆盖 managed_safe_sync 的有效行为。
+
+### Step 5c: same_repository 的安全同步
+
+当前版本直接执行 git fetch REMOTE refs/heads/BRANCH:refs/remotes/REMOTE/BRANCH 更新远程跟踪分支；是否改为调用专用 /git-fetch skill 仍记录在 scratch/remote-repository-policy.md 中，暂不在本 skill 内决定。
+
+1. 使用 git ls-remote --heads REMOTE refs/heads/BRANCH 确认远程分支是否存在；退出码 0 且输出为空表示分支不存在，其他失败停止远程阶段。
+2. 如果远程分支不存在，使用明确的 git push --set-upstream REMOTE HEAD:BRANCH 创建跟踪关系；这适用于当前分支发布到唯一可用 remote。
+3. 如果远程分支存在，执行 git fetch REMOTE refs/heads/BRANCH:refs/remotes/REMOTE/BRANCH；失败时停止 push 并报告原始错误。
+4. 当前 commit 没有父提交且远程分支已存在时，无法证明双方基线一致，停止自动 push。
+5. 当前 commit 有父提交时，先使用 git rev-parse HEAD^、git rev-parse REMOTE/BRANCH 和 git rev-list --count REMOTE/BRANCH..HEAD 取得比较值；仅当以下条件同时满足才允许自动 push：
+   - 远端提交恰好等于 HEAD^；
+   - REMOTE/BRANCH..HEAD 的提交数恰好为 1；
+   - 比较命令全部成功。
+6. 条件满足时执行明确的 git push REMOTE HEAD:BRANCH；无 upstream 时使用 --set-upstream。
+7. 条件不满足时使用 git rev-list --left-right --count REMOTE/BRANCH...HEAD 取得 ahead/behind 数量，停止自动远程写入，报告本地分支、远程分支、本地 HEAD、远端提交及数量。
+8. fetch、比较或 push 任一命令失败时停止远程阶段；本地 commit 保留。push 期间远端再次变化导致失败时，不自动重试，重新报告远程状态。
+
+## Step 6: 提交后报告
+
+根据最新 git status 和远程结果报告：
+
+- 本地 commit 是否成功；
+- 是否已同步；
+- 是否存在未暂存、未跟踪或未推送提交；
+- 如无 upstream，说明需要明确设置目标后才能推送；
+- 如因远端分叉停止，建议使用专门的 pull、sync 或冲突处理流程，不自动执行。
+
+## 错误处理原则
+
+- 认证、权限、网络和 hook 错误：显示原始错误和结果，不自动重试；
+- 远程有新提交：不自动执行 git pull --rebase，避免改写本地 commit；
+- 暂存区为空、nothing to commit 或提交失败：立即结束，不进入远程阶段；
+- 用户取消任何确认：结束当前任务，保留已有工作区和暂存状态；
+- 任何内部规则初始化、修复或写入失败：停止当前任务，不继续执行依赖该规则的动作。
 
 ## Protocol: 规则自愈机制
 
-每个 skill 执行前必须执行以下流程：
+每次执行按以下顺序：
 
-```
-┌─────────────────────────────────────────────────────┐
-│ 1. 检查 .claude/rules.json 是否存在                   │
-│    ├─ 存在 → 读取并解析                                │
-│    └─ 不存在 → 调用 create_rules_json() 创建           │
-├─────────────────────────────────────────────────────┤
-│ 2. 提取本 skill 相关规则                               │
-│    ├─ 规则存在 → 按规则执行，跳过询问                    │
-│    └─ 规则缺失 → 继续步骤 3                            │
-├─────────────────────────────────────────────────────┤
-│ 3. 询问用户                                            │
-│    ├─ 提供选项 + "始终"选项                             │
-│    └─ 用户选择"始终" → 更新 rules.json                 │
-├─────────────────────────────────────────────────────┤
-│ 4. 执行操作                                            │
-└─────────────────────────────────────────────────────┘
-```
-
-**create_rules_json() 函数逻辑**：
-1. 检查 `.claude/` 目录是否存在，不存在则创建
-2. 生成包含默认值的 `rules.json`
-3. 返回空规则对象（所有规则使用默认行为）
-
-## Protocol: 安全检查
-
-在执行任何提交操作前，必须完成以下安全检查：
-
-1. **敏感信息扫描**：检查 diff 中是否包含密码、密钥、token 等
-2. **大文件警告**：单个文件 >1MB 时警告
-3. **二进制文件提示**：二进制文件需要特殊处理
-4. **调试代码检测**：检查 console.log、print、debugger 等调试语句
-
-如果检测到问题，必须明确警告用户并获得确认才能继续。
+1. 解析仓库根目录并检查 Git 特殊状态；
+2. 配置缺失时内部调用 /git-rules init --internal；
+3. 文件读取失败时停止；
+4. JSON 结构错误时内部调用 /git-rules repair --internal；
+5. 单项缺失或非法时内部调用 /git-rules repair SCOPE KEY --internal；
+6. 重新读取并校验 rules.{scope}.{key}.value；scope 为 git-commit 时使用 rules["git-commit"]。
+7. 根据 repository_relation_mode 计算本次有效策略；
+8. 执行提交和后续同步。
