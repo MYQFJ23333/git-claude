@@ -38,6 +38,7 @@ license: MIT
    - rules["git-commit"].empty_staging_mode.value
    - rules["git-commit"].commit_message_mode.value
    - rules["git-commit"].post_commit_push_mode.value
+   - rules["git-commit"].pre_check_mode.value
 6. 规则缺失或非法时不得只在内存中静默使用默认值；必须先完成对应的内部修复。
 7. 计算本次有效远程策略：
    - unconfigured：首次进入远程同步时向用户询问并保存选择；
@@ -65,6 +66,23 @@ license: MIT
 ### Step 2b: 文件类型、大小和安全检查
 
 使用 Git index 中的暂存内容检查，不以工作区未暂存版本代替暂存版本。
+
+pre_check_mode 在所有检查流程前判断：
+
+- unconfigured：向用户介绍预检功能（大文件检测、敏感文件名检查、敏感信息扫描）及四种模式（disabled、warn、block、prompt），用户选择完成后内部调用 /git-rules set git-commit pre_check_mode VALUE；用户选择 “prompt” 时，跳跃到 prompt 流程；其他选项直接使用。
+- disabled：跳过大文件检测、敏感文件名检查和敏感信息内容扫描，直接进入 Step 3；
+- warn：执行全部检查，发现问题时警告但允许继续；
+- block：执行全部检查，发现阻止级别问题时终止提交；
+- prompt：给予用户四个选择：disabled，warn，block，unconfigured。用户选择"unconfigured" 时，跳跃到 unconfigured 流程。
+
+请注意，在使用 AskUserQuesion 工具询问时，请使用以下对应的中文标签进行显示：
+
+- unconfigured：设置默认行为
+- disabled：不检查
+- warn：检查仅警告
+- block：检查并阻止
+- prompt：每次询问
+
 
 1. 识别新增、修改、删除、重命名、复制和二进制文件。
 2. 删除文件不扫描删除内容；重命名同时检查旧路径和新路径的敏感文件名。
@@ -159,7 +177,7 @@ custom 文件缺失、为空或无法读取时停止，并提示需要配置该�
 
 ### Step 3d: 展示并确认
 
-展示最终完整 message、检测到的关联信息以及是否包含 body/footer，然后询问：
+展示最终完整 message、检测到的关联信息以及是否包含 body/footer，然后使用AskUserQuestion工具询问：
 
 - 直接使用；
 - 修改后使用；

@@ -1,0 +1,98 @@
+{
+  "version": "0.0.1",
+  "created_at": "2026-09-18",
+  "updated_at": "2026-09-18",
+  "rules": {
+    "project": {
+      "repository_relation_mode": {
+        "value": "unconfigured",
+        "options": [
+          "unconfigured",
+          "independent_repositories",
+          "same_repository"
+        ],
+        "labels": {
+          "unconfigured": "需要初始化",
+          "independent_repositories": "分别处理",
+          "same_repository": "视为同一仓库"
+        },
+        "description": "当前项目的远程仓库协作策略",
+        "set_at": "2026-09-18"
+      },
+      "large_file_size_limit": {
+        "value": "1MB",
+        "type": "file_size",
+        "description": "单个暂存 blob 的大文件警告阈值",
+        "set_at": "2026-09-18"
+      }
+    },
+    "git-commit": {
+      "empty_staging_mode": {
+        "value": "stage_all",
+        "options": [
+          "prompt",
+          "stage_all",
+          "abort"
+        ],
+        "labels": {
+          "prompt": "询问",
+          "stage_all": "暂存全部",
+          "abort": "终止"
+        },
+        "description": "暂存区为空时的行为",
+        "set_at": "2026-09-18"
+      },
+      "commit_message_mode": {
+        "value": "conventional_full",
+        "options": [
+          "unconfigured",
+          "conventional_simple",
+          "conventional_full",
+          "custom"
+        ],
+        "labels": {
+          "unconfigured": "需要初始化",
+          "conventional_simple": "简单 Conventional",
+          "conventional_full": "完整 Conventional",
+          "custom": "自定义"
+        },
+        "description": "commit message 风格",
+        "set_at": "2026-09-18"
+      },
+      "post_commit_push_mode": {
+        "value": "prompt",
+        "options": [
+          "prompt",
+          "always",
+          "never"
+        ],
+        "labels": {
+          "prompt": "询问",
+          "always": "总是",
+          "never": "从不"
+        },
+        "description": "independent_repositories 模式下 commit 成功后的 push 行为",
+        "set_at": "2026-09-18"
+      },
+      "pre_check_mode": {
+        "value": "unconfigured",
+        "options": [
+          "unconfigured",
+          "disabled",
+          "warn",
+          "block",
+          "prompt"
+        ],
+        "labels": {
+          "unconfigured": "需要初始化",
+          "disabled": "不检查",
+          "warn": "警告但继续",
+          "block": "阻止提交",
+          "prompt": "询问"
+        },
+        "description": "提交前的预检行为（大文件检测、敏感文件名检查、敏感信息扫描等）",
+        "set_at": "2026-09-18"
+      }
+    }
+  }
+}

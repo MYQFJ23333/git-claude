@@ -115,6 +115,19 @@ Shared data model、Policy inheritance 或 Call contract 中。
             },
             "description": "independent_repositories 模式下 commit 成功后的 push 行为",
             "set_at": "YYYY-MM-DD"
+          },
+          "pre_check_mode": {
+            "value": "unconfigured",
+            "options": ["unconfigured", "disabled", "warn", "block", "prompt"],
+            "labels": {
+              "unconfigured": "需要初始化",
+              "disabled": "不检查",
+              "warn": "警告但继续",
+              "block": "阻止提交",
+              "prompt": "询问"
+            },
+            "description": "提交前的预检行为（大文件检测、敏感文件名检查、敏感信息扫描等）",
+            "set_at": "YYYY-MM-DD"
           }
         }
       }
