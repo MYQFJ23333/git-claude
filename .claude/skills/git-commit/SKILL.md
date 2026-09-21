@@ -32,15 +32,16 @@ license: MIT
 2. 配置存在时，先读取文件。读取失败时立即停止，不覆盖文件。
 3. 如果 JSON 解析失败或整体结构无效，内部调用 /git-rules repair --internal。修复失败时停止；修复成功后重新读取和校验。
 4. 如果单个规则缺失或 value 非法，内部调用 /git-rules repair SCOPE KEY --internal。修复成功后重新读取和校验。
-5. 从以下精确路径读取规则值：
+5. 如果配置 version 与基准版本不一致，或规则清单与 canonical 不一致，内部调用 /git-rules calibrate --internal。校准静默完成，不向用户展示过程；配置 version 高于基准版本时不做写入，继续使用现有值。
+6. 从以下精确路径读取规则值：
    - rules.project.repository_relation_mode.value
    - rules.project.large_file_size_limit.value
    - rules["git-commit"].empty_staging_mode.value
    - rules["git-commit"].commit_message_mode.value
    - rules["git-commit"].post_commit_push_mode.value
    - rules["git-commit"].pre_check_mode.value
-6. 规则缺失或非法时不得只在内存中静默使用默认值；必须先完成对应的内部修复。
-7. 计算本次有效远程策略：
+7. 规则缺失或非法时不得只在内存中静默使用默认值；必须先完成对应的内部修复。
+8. 计算本次有效远程策略：
    - unconfigured：首次进入远程同步时按 Step 5b 询问并保存选择；
    - independent_repositories：使用 git-commit 自身的 post_commit_push_mode；
    - same_repository：使用 git-rules 的 managed_safe_sync 策略，语义见 git-rules 的 Policy inheritance。
