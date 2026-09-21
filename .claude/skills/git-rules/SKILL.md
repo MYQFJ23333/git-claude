@@ -1,7 +1,7 @@
 ---
 name: git-rules
 description: 管理 Git Skills 的项目级规则配置，支持查看、设置、重置、初始化、修复、导出和导入 git-claude-rules.json
-argument-hint: "[show|set <scope> <key> <value>|reset [scope] [--force]|init [--internal] [--replace]|repair [scope] [key] [--internal]|export|import <file>]"
+argument-hint: "[show|set <scope> <key> <value>|reset [scope] [--force]|init [--internal] [--replace]|repair [scope] [key] [--internal]|ask <scope> <key> [--only <value,...>]|export|import <file>]"
 license: MIT
 ---
 
@@ -21,20 +21,23 @@ Shared data model、Policy inheritance 或 Call contract 中。
 
 从 $ARGUMENTS 获取命令：
 
-- 无参数：进入面向用户的交互式规则管理；
+- 无参数：只读展示当前配置和用法提示后结束，见「无参数调用」；
 - show：显示当前规则；
 - set SCOPE KEY VALUE：设置单项规则；
 - reset [SCOPE] [--force]：重置指定作用域或全部规则；
 - init [--internal] [--replace]：初始化配置文件；
 - repair [SCOPE] [KEY] [--internal]：修复配置文件或指定规则；
+- ask SCOPE KEY [--only VALUE,...]：向用户询问单项规则的值，统一处理「总是使用 / 仅本次」和写回；
 - export：导出规则；
 - import FILE：导入规则。
 
 未知命令、参数缺失或参数格式错误时，报告用法并停止，不猜测用户意图。
 
+本 skill 只在这两种明确声明的场景发起询问：ask 分支的单项规则询问、show 分支在配置缺失时的二选一确认。其余分支一律不询问，直接执行或只读展示后结束。
+
 调用分为两种模式：
 
-- 用户模式：可以询问确认并显示操作过程；
+- 用户模式：显示操作过程；除上述两种场景外不发起询问，执行完直接报告结果；
 - 内部模式：由其他 skill 调用，不展示初始化、修复和策略计算过程，只返回成功或失败结果。
 
 --internal 只供内部调用使用。直接用户调用不得使用 --internal。
@@ -55,83 +58,37 @@ Shared data model、Policy inheritance 或 Call contract 中。
 
 ### Canonical schema
 
-配置使用以下规范结构：
+顶层结构固定为：
 
     {
       "version": "0.0.1",
       "created_at": "YYYY-MM-DD",
       "updated_at": "YYYY-MM-DD",
       "rules": {
-        "project": {
-          "repository_relation_mode": {
-            "value": "unconfigured",
-            "options": ["unconfigured", "independent_repositories", "same_repository"],
-            "labels": {
-              "unconfigured": "需要初始化",
-              "independent_repositories": "分别处理",
-              "same_repository": "视为同一仓库"
-            },
-            "description": "当前项目的远程仓库协作策略",
-            "set_at": "YYYY-MM-DD"
-          },
-          "large_file_size_limit": {
-            "value": "1MB",
-            "type": "file_size",
-            "description": "单个暂存 blob 的大文件警告阈值",
-            "set_at": "YYYY-MM-DD"
-          }
-        },
-        "git-commit": {
-          "empty_staging_mode": {
-            "value": "prompt",
-            "options": ["prompt", "stage_all", "abort"],
-            "labels": {
-              "prompt": "询问",
-              "stage_all": "暂存全部",
-              "abort": "终止"
-            },
-            "description": "暂存区为空时的行为",
-            "set_at": "YYYY-MM-DD"
-          },
-          "commit_message_mode": {
-            "value": "unconfigured",
-            "options": ["unconfigured", "conventional_simple", "conventional_full", "custom"],
-            "labels": {
-              "unconfigured": "需要初始化",
-              "conventional_simple": "简单 Conventional",
-              "conventional_full": "完整 Conventional",
-              "custom": "自定义"
-            },
-            "description": "commit message 风格",
-            "set_at": "YYYY-MM-DD"
-          },
-          "post_commit_push_mode": {
-            "value": "prompt",
-            "options": ["prompt", "always", "never"],
-            "labels": {
-              "prompt": "询问",
-              "always": "总是",
-              "never": "从不"
-            },
-            "description": "independent_repositories 模式下 commit 成功后的 push 行为",
-            "set_at": "YYYY-MM-DD"
-          },
-          "pre_check_mode": {
-            "value": "unconfigured",
-            "options": ["unconfigured", "disabled", "warn", "block", "prompt"],
-            "labels": {
-              "unconfigured": "需要初始化",
-              "disabled": "不检查",
-              "warn": "警告但继续",
-              "block": "阻止提交",
-              "prompt": "询问"
-            },
-            "description": "提交前的预检行为（大文件检测、敏感文件名检查、敏感信息扫描等）",
+        "<scope>": {
+          "<key>": {
+            "value": "<当前值>",
+            "options": ["<选项>"],
+            "labels": { "<选项>": "<中文标签>" },
+            "description": "<说明>",
             "set_at": "YYYY-MM-DD"
           }
         }
       }
     }
+
+可选的 type 字段用于类型化规则；没有 options 的规则省略 options 和 labels。
+
+全部规则定义见下表，本表是 init、repair 和 import 的唯一规范来源。`默认 value` 是 init 写入的值；`options` 列每项写作 `value=标签`，写入时拆为 labels 对象的键值对，选项顺序即展示顺序；`description` 列对应 description 字段。
+
+| scope | key | 默认 value | options（value=标签） | description |
+| --- | --- | --- | --- | --- |
+| project | repository_relation_mode | unconfigured | unconfigured=需要初始化、independent_repositories=分别处理、same_repository=视为同一仓库 | 当前项目的远程仓库协作策略 |
+| project | large_file_size_limit | 1MB | 无（type=file_size） | 单个暂存 blob 的大文件警告阈值 |
+| git-commit | empty_staging_mode | prompt | prompt=询问、stage_all=暂存全部、abort=终止 | 暂存区为空时的行为 |
+| git-commit | commit_message_mode | unconfigured | unconfigured=需要初始化、conventional_simple=简单 Conventional、conventional_full=完整 Conventional、custom=自定义 | commit message 风格 |
+| git-commit | post_commit_push_mode | prompt | prompt=询问、always=总是、never=从不 | independent_repositories 模式下 commit 成功后的 push 行为 |
+| git-commit | pre_check_mode | unconfigured | unconfigured=设置默认行为、disabled=不检查、warn=检查仅警告、block=检查并阻止、prompt=每次询问 | 提交前的预检行为（大文件检测、敏感文件名检查、敏感信息扫描等） |
 
 ### Policy inheritance
 
@@ -154,6 +111,20 @@ repository_relation_mode 是远程协作策略的上层控制项：
 large_file_size_limit 接受正数加 B、KB、MB 或 GB，单位不区分大小写，按 1024 进位计算。默认值为 1MB。
 
 ## Operation branches
+
+### 无参数调用
+
+直接调用 /git-rules 而不带命令时，只做一次只读展示，然后结束：
+
+1. 读取并校验配置，展示每条规则的方式与 show 分支一致；
+2. 配置不存在、读取失败或整体结构错误时，报告状态和建议命令后结束，不自动执行 init 或 repair；
+3. 打印用法提示，至少覆盖 /git-rules show、/git-rules set SCOPE KEY VALUE、/git-rules reset [SCOPE]、/git-rules ask SCOPE KEY 四种；
+4. 说明用户可以直接口述要修改的规则，由当前会话代为调用 set，无需自己拼命令；
+5. 展示完毕后立即结束，不追加任何确认步骤，也不询问是否要修改。
+
+本分支不调用 AskUserQuestion，不询问是否要修改任何规则，也不进入交互式配置流程。
+
+适用本 skill 全部分支的约束：规则集包含 6 条规则、每条 3 到 5 个选项，无法用单次 AskUserQuestion 表示，因为单个问题最多 4 个选项。需要改动多条规则时，由用户逐条调用或口述后由会话代为执行。
 
 ### show
 
@@ -228,6 +199,27 @@ repair 是配置修复分支，不是所有命令的必经步骤。
 
 任意读取、分析、恢复记录写入、初始化、覆盖或最终校验失败，都报告具体阶段并停止。
 
+### ask
+
+供其他 skill 在需要用户选择可配置项时调用。本分支统一负责展示选项、处理「总是使用 / 仅本次」和写回，调用方只接收最终生效值。
+
+本分支只适用于首次配置或允许用户改变持久行为的场景。语义上要求「每次都询问」的取值不得使用本分支，因为它提供的「总是使用」会破坏该语义。
+
+1. 确认配置存在、可读取且结构有效，按需完成修复；
+2. 读取 rules.{scope}.{key} 的 options、labels 和当前 value；
+3. 确定候选值：默认使用该规则的全部 options；调用方以 --only VALUE,... 收窄范围时，只使用列出的候选值，且候选值必须是该规则 options 的子集；
+4. 使用一次 AskUserQuestion 调用、两个问题完成询问：问题一选择候选值，问题二选择「总是使用」或「仅本次」；
+5. 候选值的选项标签取 labels 中对应文案，无 labels 时使用 value 原文；选项顺序沿用 options 的顺序；
+6. 候选值超过 4 个时不得使用本分支；调用方必须先用 --only 收窄到 4 个以内；
+7. 用户选「总是使用」时，内部调用 set 分支写回问题一选中的值并更新 set_at；
+8. 用户选「仅本次」时不写入规则；
+9. 用户取消任一问题时返回取消状态，调用方据此终止当前任务；
+10. 返回生效值以及是否已写回。
+
+候选值集合排除当前 value 时，必须由调用方通过 --only 显式指定，本分支不猜测调用方的意图。
+
+--internal 调用不展示询问和写回过程，只返回生效值与写回状态。
+
 ### export
 
 1. 读取并校验配置；
@@ -254,6 +246,7 @@ repair 是配置修复分支，不是所有命令的必经步骤。
   - 单项缺失或非法 → 内部 repair SCOPE KEY；
   - 修复后重新读取并校验。
 - read rule：读取 rules.{scope}.{key}.value；git-commit scope 使用 rules["git-commit"]。
+- ask rule：需要用户选择可配置项时调用 ask 分支，由它统一展示 labels、处理「总是使用 / 仅本次」并写回；调用方不要把标签文案和写回逻辑复制到自己的流程里；
 - write rule：内部调用 set，不能直接改 JSON；
 - resolve remote policy：读取 repository_relation_mode，并计算本次有效远程策略；
 - local-only skill：不涉及远程操作时，不必解析远程策略；

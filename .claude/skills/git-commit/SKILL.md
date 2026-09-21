@@ -41,9 +41,9 @@ license: MIT
    - rules["git-commit"].pre_check_mode.value
 6. 规则缺失或非法时不得只在内存中静默使用默认值；必须先完成对应的内部修复。
 7. 计算本次有效远程策略：
-   - unconfigured：首次进入远程同步时向用户询问并保存选择；
+   - unconfigured：首次进入远程同步时按 Step 5b 询问并保存选择；
    - independent_repositories：使用 git-commit 自身的 post_commit_push_mode；
-   - same_repository：使用统一的 managed_safe_sync 策略。该策略覆盖本次 post_commit_push_mode 的有效行为，但保留其配置值，供以后切换回 independent_repositories 时使用。
+   - same_repository：使用 git-rules 的 managed_safe_sync 策略，语义见 git-rules 的 Policy inheritance。
 
 ## Step 2: 暂存区分析
 
@@ -52,37 +52,28 @@ license: MIT
 1. 执行 git diff --cached --name-status -z，检查命令是否成功。
 2. 输出为空才表示暂存区为空。
 3. 暂存区为空时按 empty_staging_mode 处理：
-   - prompt：询问“是、否、总是、从不”。
-     - 是：本次从仓库根目录执行 git add --all -- .；
-     - 否：终止；
-     - 总是：内部调用 /git-rules set git-commit empty_staging_mode stage_all，再执行 git add --all -- .；
-     - 从不：内部调用 /git-rules set git-commit empty_staging_mode abort，然后终止。
+   - prompt：调用 /git-rules ask git-commit empty_staging_mode --only stage_all,abort，按生效值执行下面对应分支；
    - stage_all：从仓库根目录执行 git add --all -- .；
    - abort：报告暂存区为空并终止。
 4. git add 失败时停止，保留已有暂存状态，报告原始错误。
 5. 暂存操作完成后重新执行 git diff --cached --name-status -z，显示实际暂存文件清单。内部创建的规则配置属于项目文件；如果用户选择暂存全部，它会按实际状态进入暂存清单。
-6. 重新检查清单为空和未解决冲突；为空或存在冲突时终止。
+6. 重新检查暂存清单是否为空；为空时终止。冲突状态已在 Step 1a 检查并终止，此处不再复查。
 
 ### Step 2b: 文件类型、大小和安全检查
 
 使用 Git index 中的暂存内容检查，不以工作区未暂存版本代替暂存版本。
 
-pre_check_mode 在所有检查流程前判断：
+pre_check_mode 在所有检查流程前解析。下表描述每种取值对应的动作；用户选择导致规则被写回时，按写回后的值重新解析本表：
 
-- unconfigured：向用户介绍预检功能（大文件检测、敏感文件名检查、敏感信息扫描）及四种模式（disabled、warn、block、prompt），用户选择完成后内部调用 /git-rules set git-commit pre_check_mode VALUE；用户选择 “prompt” 时，跳跃到 prompt 流程；其他选项直接使用。
-- disabled：跳过大文件检测、敏感文件名检查和敏感信息内容扫描，直接进入 Step 3；
-- warn：执行全部检查，发现问题时警告但允许继续；
-- block：执行全部检查，发现阻止级别问题时终止提交；
-- prompt：给予用户四个选择：disabled，warn，block，unconfigured。用户选择"unconfigured" 时，跳跃到 unconfigured 流程。
+| 当前值 | 动作 |
+| --- | --- |
+| unconfigured | 向用户介绍预检功能（大文件检测、敏感文件名检查、敏感信息扫描），调用 /git-rules ask git-commit pre_check_mode --only disabled,warn,block,prompt，再按生效值重新解析本表 |
+| disabled | 跳过大文件检测、敏感文件名检查和敏感信息内容扫描，直接进入 Step 3 |
+| warn | 执行全部检查，发现问题时警告但允许继续 |
+| block | 执行全部检查，发现阻止级别问题时终止提交 |
+| prompt | 每次进入预检都向用户在 disabled、warn、block、unconfigured 中选择，选择仅本次生效、不写回规则；选 unconfigured 时进入 unconfigured 分支 |
 
-请注意，在使用 AskUserQuesion 工具询问时，请使用以下对应的中文标签进行显示：
-
-- unconfigured：设置默认行为
-- disabled：不检查
-- warn：检查仅警告
-- block：检查并阻止
-- prompt：每次询问
-
+各分支解析完成后，对暂存区执行以下检查：
 
 1. 识别新增、修改、删除、重命名、复制和二进制文件。
 2. 删除文件不扫描删除内容；重命名同时检查旧路径和新路径的敏感文件名。
@@ -163,13 +154,11 @@ large_file_size_limit 必须是正数，格式为数字加 B、KB、MB 或 GB，
 
 ### Step 3c: Message 风格
 
-当 commit_message_mode 为 unconfigured 时，无论用户是否提供 message，都先向用户介绍并询问：
+当 commit_message_mode 为 unconfigured 时，无论用户是否提供 message，都先向用户说明三种风格，再调用 /git-rules ask git-commit commit_message_mode --only conventional_simple,conventional_full,custom 取得生效值：
 
 - conventional_simple：单行 TYPE[(SCOPE)]: DESCRIPTION；
 - conventional_full：Conventional 标题、空行、body 和可选 footer；
 - custom：读取 .claude/sample/commit-message.md。
-
-用户选择“始终使用”时，内部调用 /git-rules set git-commit commit_message_mode VALUE；选择“仅本次”时不写入规则。
 
 Conventional type 使用 feat、fix、docs、style、refactor、perf、test、build、ci、chore 或 revert。标题必须有合法 type、冒号和非空描述。
 
@@ -231,12 +220,10 @@ custom 文件缺失、为空或无法读取时停止，并提示需要配置该�
 
 ### Step 5b: 选择有效远程策略
 
-repository_relation_mode 为 unconfigured 时，向用户介绍：
+repository_relation_mode 为 unconfigured 时，先向用户说明两种模式的含义，再调用 /git-rules ask project repository_relation_mode --only independent_repositories,same_repository 取得生效值，并按生效值重新计算有效策略：
 
 - 视为独立仓库：本地和远程分别处理，遵守 post_commit_push_mode；
 - 视为同一仓库：将远程视为本地仓库协作的一部分，由统一 managed_safe_sync 策略自动处理远程事项。
-
-用户选择后，内部调用 /git-rules set project repository_relation_mode VALUE，再重新计算有效策略。
 
 effective policy：
 
@@ -244,16 +231,9 @@ effective policy：
   - prompt：询问是否 push，并提供是、否、总是、从不；是和总是都使用明确的 REMOTE HEAD:BRANCH refspec，push 失败时停止；
   - always：有明确 upstream 时自动 push；没有 upstream 时停止并报告；
   - never：不自动 push，明确报告尚未同步。
-- same_repository：
-  - 提交后先更新远端状态；
-  - 唯一 remote 且无 upstream 时自动设置 upstream；
-  - 只有确认远端不会覆盖或分叉本地本次 commit 时才自动 push；
-  - 远端存在无法安全合并的新历史时停止，不自动 pull 或 rebase；
-  - 本次 post_commit_push_mode 的存储值保留，但不覆盖 managed_safe_sync 的有效行为。
+- same_repository：使用 git-rules 的 managed_safe_sync 策略，语义见 git-rules 的 Policy inheritance。本次 post_commit_push_mode 的存储值保留，但被该策略覆盖，不参与本次行为。
 
 ### Step 5c: same_repository 的安全同步
-
-当前版本直接执行 git fetch REMOTE refs/heads/BRANCH:refs/remotes/REMOTE/BRANCH 更新远程跟踪分支；是否改为调用专用 /git-fetch skill 仍记录在 scratch/remote-repository-policy.md 中，暂不在本 skill 内决定。
 
 1. 使用 git ls-remote --heads REMOTE refs/heads/BRANCH 确认远程分支是否存在；退出码 0 且输出为空表示分支不存在，其他失败停止远程阶段。
 2. 如果远程分支不存在，使用明确的 git push --set-upstream REMOTE HEAD:BRANCH 创建跟踪关系；这适用于当前分支发布到唯一可用 remote。
@@ -279,21 +259,10 @@ effective policy：
 
 ## 错误处理原则
 
+以下约束适用于全流程，不被任何分支覆盖：
+
 - 认证、权限、网络和 hook 错误：显示原始错误和结果，不自动重试；
-- 远程有新提交：不自动执行 git pull --rebase，避免改写本地 commit；
-- 暂存区为空、nothing to commit 或提交失败：立即结束，不进入远程阶段；
-- 用户取消任何确认：结束当前任务，保留已有工作区和暂存状态；
-- 任何内部规则初始化、修复或写入失败：停止当前任务，不继续执行依赖该规则的动作。
+- 任何内部规则初始化、修复或写入失败：停止当前任务，不继续执行依赖该规则的动作；
+- 远程状态无法证明可安全合并时停止远程写入，不自动执行 git pull --rebase，避免改写本地 commit。
 
-## Protocol: 规则自愈机制
-
-每次执行按以下顺序：
-
-1. 解析仓库根目录并检查 Git 特殊状态；
-2. 配置缺失时内部调用 /git-rules init --internal；
-3. 文件读取失败时停止；
-4. JSON 结构错误时内部调用 /git-rules repair --internal；
-5. 单项缺失或非法时内部调用 /git-rules repair SCOPE KEY --internal；
-6. 重新读取并校验 rules.{scope}.{key}.value；scope 为 git-commit 时使用 rules["git-commit"]。
-7. 根据 repository_relation_mode 计算本次有效策略；
-8. 执行提交和后续同步。
+其余错误行为（用户取消确认、暂存区为空、nothing to commit、提交失败）已在对应步骤声明。
