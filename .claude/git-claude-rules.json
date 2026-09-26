@@ -1,0 +1,92 @@
+{
+  "version": "0.2.0",
+  "created_at": "2026-09-27",
+  "updated_at": "2026-09-27",
+  "rules": {
+    "project": {
+      "repository_relation_mode": {
+        "value": "same_repository",
+        "options": [
+          "independent_repositories",
+          "same_repository"
+        ],
+        "labels": {
+          "independent_repositories": "分别处理",
+          "same_repository": "视为同一仓库"
+        },
+        "description": "当前项目的远程仓库协作策略",
+        "set_at": "2026-09-27"
+      },
+      "large_file_size_limit": {
+        "value": "1MB",
+        "type": "file_size",
+        "description": "单个暂存 blob 的大文件警告阈值",
+        "set_at": "2026-09-27"
+      }
+    },
+    "git-commit": {
+      "empty_staging_mode": {
+        "value": "stage_all",
+        "options": [
+          "prompt",
+          "stage_all",
+          "abort"
+        ],
+        "labels": {
+          "prompt": "询问",
+          "stage_all": "暂存全部",
+          "abort": "终止"
+        },
+        "description": "暂存区为空时的行为",
+        "set_at": "2026-09-27"
+      },
+      "commit_message_mode": {
+        "value": "custom",
+        "options": [
+          "conventional_simple",
+          "conventional_full",
+          "custom"
+        ],
+        "labels": {
+          "conventional_simple": "简单 Conventional",
+          "conventional_full": "完整 Conventional",
+          "custom": "自定义"
+        },
+        "description": "commit message 风格",
+        "set_at": "2026-09-27"
+      },
+      "post_commit_push_mode": {
+        "value": "prompt",
+        "options": [
+          "prompt",
+          "always",
+          "never"
+        ],
+        "labels": {
+          "prompt": "询问",
+          "always": "总是",
+          "never": "从不"
+        },
+        "description": "independent_repositories 模式下 commit 成功后的 push 行为",
+        "set_at": "2026-09-27"
+      },
+      "pre_check_mode": {
+        "value": "disabled",
+        "options": [
+          "prompt",
+          "disabled",
+          "warn",
+          "block"
+        ],
+        "labels": {
+          "prompt": "每次询问",
+          "disabled": "不检查",
+          "warn": "检查仅警告",
+          "block": "检查并阻止"
+        },
+        "description": "提交前的预检行为（大文件检测、敏感文件名检查、敏感信息扫描等）",
+        "set_at": "2026-09-27"
+      }
+    }
+  }
+}
