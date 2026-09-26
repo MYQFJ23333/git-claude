@@ -62,7 +62,7 @@ Shared data model、Policy inheritance 或 Call contract 中。
 顶层结构固定为：
 
     {
-      "version": "0.0.3",
+      "version": "0.2.0",
       "created_at": "YYYY-MM-DD",
       "updated_at": "YYYY-MM-DD",
       "rules": {
