@@ -45,6 +45,7 @@ license: MIT
    - unconfigured：首次进入远程同步时按 Step 5b 询问并保存选择；
    - independent_repositories：使用 git-commit 自身的 post_commit_push_mode；
    - same_repository：使用 git-rules 的 managed_safe_sync 策略，语义见 git-rules 的 Policy inheritance。
+9. 所有 /git-rules ask 调用都必须先检查返回的 status：selected 时才使用 effective_action；cancelled 时终止当前任务；error 时报告规则询问或写回失败并终止，不得继续执行依赖该选择的动作。
 
 ## Step 2: 暂存区分析
 
@@ -53,26 +54,30 @@ license: MIT
 1. 执行 git diff --cached --name-status -z，检查命令是否成功。
 2. 输出为空才表示暂存区为空。
 3. 暂存区为空时按 empty_staging_mode 处理：
-   - prompt：调用 /git-rules ask git-commit empty_staging_mode --only stage_all,abort，按生效值执行下面对应分支；
+   - prompt：调用 /git-rules ask git-commit empty_staging_mode，按返回的 effective_action 执行下面对应分支；询问选项和写回映射由 git-rules 按需读取；
    - stage_all：从仓库根目录执行 git add --all -- .；
    - abort：报告暂存区为空并终止。
 4. git add 失败时停止，保留已有暂存状态，报告原始错误。
 5. 暂存操作完成后重新执行 git diff --cached --name-status -z，显示实际暂存文件清单。内部创建的规则配置属于项目文件；如果用户选择暂存全部，它会按实际状态进入暂存清单。
 6. 重新检查暂存清单是否为空；为空时终止。冲突状态已在 Step 1a 检查并终止，此处不再复查。
+7. 执行 git diff --name-only -z 和 git ls-files --others --exclude-standard -z，判断暂存区之外是否还存在未暂存或未跟踪更改；命令失败时停止当前阶段。
+8. 暂存区非空且同时存在未暂存或未跟踪更改时，使用 AskUserQuestion 询问用户本次提交的范围。询问前必须提示用户：当前暂存区内容已确认，但询问期间仍然可以继续修改暂存区，最终提交范围以确认后的最新暂存状态为准。选项：
+   - 提交全部更改：执行 git add --all -- .，把工作区更改一并纳入本次提交；
+   - 只提交已暂存更改：不修改暂存区，仅提交当前已暂存内容。
+9. 用户选择后重新执行 git diff --cached --name-status -z，显示最新暂存文件清单，作为本次提交的确定范围；后续 Step 2b 和 Step 3b 一律使用该清单，不使用询问前的旧结果。选择只提交已暂存更改时，本次重扫用于确定用户在询问期间是否修改过暂存区，并按修改后的内容提交。重新扫描后暂存区为空时终止。暂存区之外只剩未暂存或未跟踪更改时，不在本次提交流程中处理，留待 Step 6 报告。
 
 ### Step 2b: 文件类型、大小和安全检查
 
 使用 Git index 中的暂存内容检查，不以工作区未暂存版本代替暂存版本。
 
-pre_check_mode 在所有检查流程前解析。下表描述每种取值对应的动作；用户选择导致规则被写回时，按写回后的值重新解析本表：
+pre_check_mode 在所有检查流程前解析。下表描述每种取值对应的动作：
 
 | 当前值 | 动作 |
 | --- | --- |
-| unconfigured | 向用户介绍预检功能（大文件检测、敏感文件名检查、敏感信息扫描），调用 /git-rules ask git-commit pre_check_mode --only disabled,warn,block,prompt，再按生效值重新解析本表 |
 | disabled | 跳过大文件检测、敏感文件名检查和敏感信息内容扫描，直接进入 Step 3 |
 | warn | 执行全部检查，发现问题时警告但允许继续 |
 | block | 执行全部检查，发现阻止级别问题时终止提交 |
-| prompt | 每次进入预检都向用户在 disabled、warn、block、unconfigured 中选择，选择仅本次生效、不写回规则；选 unconfigured 时进入 unconfigured 分支 |
+| prompt | 向用户介绍预检功能（大文件检测、敏感文件名检查、敏感信息扫描），调用 /git-rules ask git-commit pre_check_mode，再按返回的 effective_action 执行对应动作；询问选项和写回映射由 git-rules 按需读取 |
 
 各分支解析完成后，对暂存区执行以下检查：
 
@@ -155,7 +160,7 @@ large_file_size_limit 必须是正数，格式为数字加 B、KB、MB 或 GB，
 
 ### Step 3c: Message 风格
 
-当 commit_message_mode 为 unconfigured 时，无论用户是否提供 message，都先向用户说明三种风格，再调用 /git-rules ask git-commit commit_message_mode --only conventional_simple,conventional_full,custom 取得生效值：
+当 commit_message_mode 为 unconfigured 时，无论用户是否提供 message，都先向用户说明三种风格，再调用 /git-rules ask git-commit commit_message_mode；该初始化型询问只显示三种实际风格并必须写回，调用方按 effective_action 取得生效值：
 
 - conventional_simple：单行 TYPE[(SCOPE)]: DESCRIPTION；
 - conventional_full：Conventional 标题、空行、body 和可选 footer；
@@ -163,7 +168,7 @@ large_file_size_limit 必须是正数，格式为数字加 B、KB、MB 或 GB，
 
 Conventional type 使用 feat、fix、docs、style、refactor、perf、test、build、ci、chore 或 revert。标题必须有合法 type、冒号和非空描述。
 
-custom 文件缺失、为空或无法读取时停止，并提示需要配置该文件；不在提交流程中自动创建或猜测 custom 规范。
+custom 文件缺失、为空或无法读取时停止，并提示需要配置该文件、提示用户可通过文本描述引导会话创建对应文件；不在提交流程中自动创建或猜测 custom 规范。
 
 ### Step 3d: 展示并确认
 
@@ -221,7 +226,7 @@ custom 文件缺失、为空或无法读取时停止，并提示需要配置该�
 
 ### Step 5b: 选择有效远程策略
 
-repository_relation_mode 为 unconfigured 时，先向用户说明两种模式的含义，再调用 /git-rules ask project repository_relation_mode --only independent_repositories,same_repository 取得生效值，并按生效值重新计算有效策略：
+repository_relation_mode 为 unconfigured 时，先向用户说明两种模式的含义，再调用 /git-rules ask project repository_relation_mode；该初始化型询问只显示两种实际模式并必须写回，调用方按 effective_action 重新计算有效策略：
 
 - 视为独立仓库：本地和远程分别处理，遵守 post_commit_push_mode；
 - 视为同一仓库：将远程视为本地仓库协作的一部分，由统一 managed_safe_sync 策略自动处理远程事项。
@@ -229,7 +234,7 @@ repository_relation_mode 为 unconfigured 时，先向用户说明两种模式�
 effective policy：
 
 - independent_repositories：
-  - prompt：询问是否 push，并提供是、否、总是、从不；是和总是都使用明确的 REMOTE HEAD:BRANCH refspec，push 失败时停止；
+  - prompt：调用 /git-rules ask git-commit post_commit_push_mode；询问选项和写回映射由 git-rules 按需读取。effective_action 为 push 时使用明确的 REMOTE HEAD:BRANCH refspec，失败时停止；为 skip 时不推送并明确报告尚未同步；
   - always：有明确 upstream 时自动 push；没有 upstream 时停止并报告；
   - never：不自动 push，明确报告尚未同步。
 - same_repository：使用 git-rules 的 managed_safe_sync 策略，语义见 git-rules 的 Policy inheritance。本次 post_commit_push_mode 的存储值保留，但被该策略覆盖，不参与本次行为。

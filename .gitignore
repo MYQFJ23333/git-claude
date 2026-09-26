@@ -24,3 +24,10 @@ Thumbs.db
 
 # 本地文件
 .claude/git-claude-rules.json
+.claude/sample/commit-message.md
+scratch/
+
+# Codex（本地移植实验，不纳入版本控制）
+.agents/
+.Codex/
+.codex/
