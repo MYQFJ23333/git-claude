@@ -11,6 +11,6 @@
 | --- | --- | --- | --- |
 | 简单 Conventional | 使用单行 TYPE[(SCOPE)]: DESCRIPTION | conventional_simple | conventional_simple |
 | 完整 Conventional | 使用 Conventional 标题、正文和可选 footer | conventional_full | conventional_full |
-| 自定义 | 使用 .claude/sample/commit-message.md 中的项目规范 | custom | custom |
+| 自定义 | 使用 .claude/standards/commit-message-format.md 中的项目规范 | custom | custom |
 
 选择后必须写回 stored_value。不得显示或返回 unconfigured。

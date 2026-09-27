@@ -22,22 +22,25 @@ license: MIT
 5. 存在未完成 Git 操作时停止推送流程，报告状态和文件，不自动 continue、abort、reset 或 rebase。
 6. 工作区存在未提交更改不阻止推送——推送只涉及已有提交——但必须在最终报告中说明。
 
-### Step 1b: 项目规则加载
+### Step 1b: 项目规则一次性读取
 
-配置文件路径为 .claude/git-claude-rules.json。本 skill 只读取远程协作策略；当前 canonical 规则表中没有 git-push 作用域的规则，不读取其他规则，也不得因缺失而自行新增。
+1. 读取 `.claude/skills/git-rules/VERSION`，只接受单行 `MAJOR.MINOR.PATCH`；文件缺失、不可读、为空或格式非法时停止，不从其他文件猜测基准版本。
+2. 读取 `.claude/git-claude-rules.json` 一次并解析 JSON：
+   - 文件不可读时停止，不覆盖；
+   - 文件不存在或 JSON 无法解析时，内部调用 `/git-rules repair --internal`，成功后只重新读取一次，失败或仍不可用时停止。
+3. 比较配置 version 与 VERSION：
+   - 相等时继续；
+   - 不相等、缺失或格式非法时，内部调用 `/git-rules calibrate --internal`，成功后只重新读取一次；配置版本高于基准、校准失败或重读后仍不一致时停止。
+4. 版本一致后缓存 JSON Pointer `/rules/project/repository_relation_mode/value` 指向的值；缺失值也按缺失状态缓存，本步骤不校验或修复它。
 
-1. 配置不存在时，内部调用 /git-rules init --internal。初始化过程不向用户展示；初始化失败时停止当前任务，只报告规则配置无法初始化。
-2. 配置存在时，先读取文件。读取失败时立即停止，不覆盖文件。
-3. 如果 JSON 解析失败或整体结构无效，内部调用 /git-rules repair --internal。修复失败时停止；修复成功后重新读取和校验。
-4. 如果 project repository_relation_mode 缺失或 value 非法，内部调用 /git-rules repair project repository_relation_mode --internal。修复成功后重新读取和校验。
-5. 如果配置 version 与基准版本不一致，或规则清单与 canonical 不一致，内部调用 /git-rules calibrate --internal。校准静默完成，不向用户展示过程；配置 version 高于基准版本时不做写入，继续使用现有值。
-6. 从精确路径 rules.project.repository_relation_mode.value 读取规则值。
-7. 规则缺失或非法时不得只在内存中静默使用默认值；必须先完成对应的内部修复。
-8. 计算本次有效远程策略：
+版本一致的正常路径不读取 `git-rules/SKILL.md`，也不检查完整规则清单、规则元数据或其他 value。在解析推送目标前验证缓存值，只接受 unconfigured、independent_repositories 或 same_repository；目标规则缺失或 value 非法时，内部调用 `/git-rules repair project repository_relation_mode --internal`，成功后只重新读取一次，失败或仍不可用时停止。任何 `/git-rules ask` 或其他配置写入成功后都丢弃旧快照，并一次性重新读取 VERSION、配置 version 和该 value。不得静默使用内存默认值，也不得新增 git-push 作用域。
+
+读取成功后计算本次有效远程策略：
    - unconfigured：进入 Step 2 前先向用户说明两种模式的含义，调用 /git-rules ask project repository_relation_mode，按返回的 effective_action 重新计算；
    - independent_repositories：目标不猜测，由用户参数或询问确定；
-   - same_repository：使用 git-rules 的 managed_safe_sync 策略，语义见 git-rules 的 Policy inheritance。
-9. 所有 /git-rules ask 调用都必须先检查返回的 status：selected 时才使用 effective_action；cancelled 时终止当前任务；error 时报告规则询问或写回失败并终止，不得继续执行依赖该选择的动作。
+   - same_repository：使用本 skill 在 Step 3 和 Step 4 定义的 managed_safe_sync 流程。
+
+所有 /git-rules ask 调用都必须先检查返回的 status：selected 时才使用 effective_action；cancelled 时终止当前任务；error 时报告规则询问或写回失败并终止，不得继续执行依赖该选择的动作。
 
 ## Step 2: 解析推送目标
 
@@ -60,9 +63,9 @@ license: MIT
 
 1. 执行 git remote，命令失败或输出为空时报告未配置远程仓库并结束远程阶段。
 2. 执行 git branch --show-current：
-   - 为空表示 detached HEAD；此时必须同时提供 `--remote` 和 `--branch` 才能继续，否则报告原因并停止；
-   - 非空时继续。
-3. 执行 git rev-parse --abbrev-ref --symbolic-full-name '@{u}'：
+   - 为空表示 detached HEAD；此时必须同时提供 `--remote` 和 `--branch` 才能继续，否则报告原因并停止。参数完整时设置 LOCAL_REF=HEAD，直接采用参数中的 REMOTE 和 BRANCH，跳过 upstream 查询和目标推断，继续执行第 6 项；
+   - 非空时记录 CURRENT_BRANCH，并设置 LOCAL_REF=CURRENT_BRANCH，然后继续。
+3. 仅在 CURRENT_BRANCH 非空时执行 git rev-parse --abbrev-ref --symbolic-full-name '@{u}'：
    - 退出码非 0 且错误信息为 "no upstream configured"（该场景实际退出码为 128）表示没有 upstream，不视为命令失败；
    - 其他失败必须报告并停止，不得把未知错误当作无 upstream；
    - 有 upstream 时，通过 branch.BRANCH.remote 和 branch.BRANCH.merge 取得明确的 remote 和 branch。
@@ -120,7 +123,7 @@ license: MIT
 ### Step 4c: 执行与失败处理
 
 1. 执行推送并检查退出码。
-2. 成功后执行 git log --oneline -n 1 报告推送结果；再执行 git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 取得跟踪关系，退出码非 0 且错误信息为 "no upstream configured"（detached HEAD 或未设置 upstream 的场景）时跳过跟踪关系报告，不视为失败，其他失败必须报告。
+2. 成功后执行 git log --oneline -n 1 报告推送结果。CURRENT_BRANCH 非空时，再执行 git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 取得跟踪关系；退出码非 0 且错误信息为 "no upstream configured" 时跳过跟踪关系报告，不视为失败，其他失败必须报告。detached HEAD 不执行 upstream 查询，直接说明此次推送未设置跟踪关系。
 3. 非零退出时按类型处理：
    - 认证、权限、网络和 hook 错误：显示原始错误，不自动重试，停止；
    - 非快进被拒（远端在检测后再次变化）：不自动重试，重新执行 Step 3b 的 fetch 和分叉检测，按最新状态重新走预警流程；

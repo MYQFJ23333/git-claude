@@ -24,28 +24,27 @@ license: MIT
    - git status 是否报告 merge、rebase、cherry-pick 或 revert 正在进行。
 5. 如果存在冲突或未完成 Git 操作，停止普通提交流程，报告状态和文件，不自动 continue、abort、reset 或 rebase。
 
-### Step 1b: 项目规则加载
+### Step 1b: 项目规则一次性读取
 
-配置文件路径为 .claude/git-claude-rules.json。
+1. 读取 `.claude/skills/git-rules/VERSION`，只接受单行 `MAJOR.MINOR.PATCH`；文件缺失、不可读、为空或格式非法时停止，不从其他文件猜测基准版本。
+2. 读取 `.claude/git-claude-rules.json` 一次并解析 JSON：
+   - 文件不可读时停止，不覆盖；
+   - 文件不存在或 JSON 无法解析时，内部调用 `/git-rules repair --internal`，成功后只重新读取一次，失败或仍不可用时停止。
+3. 比较配置 version 与 VERSION：
+   - 相等时继续；
+   - 不相等、缺失或格式非法时，内部调用 `/git-rules calibrate --internal`，成功后只重新读取一次；配置版本高于基准、校准失败或重读后仍不一致时停止。
+4. 版本一致后一次性缓存以下 value；缺失值也按缺失状态缓存，本步骤不校验或修复它们：
 
-1. 配置不存在时，内部调用 /git-rules init --internal。初始化过程不向用户展示；初始化失败时停止当前任务，只报告规则配置无法初始化。
-2. 配置存在时，先读取文件。读取失败时立即停止，不覆盖文件。
-3. 如果 JSON 解析失败或整体结构无效，内部调用 /git-rules repair --internal。修复失败时停止；修复成功后重新读取和校验。
-4. 如果单个规则缺失或 value 非法，内部调用 /git-rules repair SCOPE KEY --internal。修复成功后重新读取和校验。
-5. 如果配置 version 与基准版本不一致，或规则清单与 canonical 不一致，内部调用 /git-rules calibrate --internal。校准静默完成，不向用户展示过程；配置 version 高于基准版本时不做写入，继续使用现有值。
-6. 从以下精确路径读取规则值：
-   - rules.project.repository_relation_mode.value
-   - rules.project.large_file_size_limit.value
-   - rules["git-commit"].empty_staging_mode.value
-   - rules["git-commit"].commit_message_mode.value
-   - rules["git-commit"].post_commit_push_mode.value
-   - rules["git-commit"].pre_check_mode.value
-7. 规则缺失或非法时不得只在内存中静默使用默认值；必须先完成对应的内部修复。
-8. 计算本次有效远程策略：
-   - unconfigured：首次进入远程同步时按 Step 5b 询问并保存选择；
-   - independent_repositories：使用 git-commit 自身的 post_commit_push_mode；
-   - same_repository：使用 git-rules 的 managed_safe_sync 策略，语义见 git-rules 的 Policy inheritance。
-9. 所有 /git-rules ask 调用都必须先检查返回的 status：selected 时才使用 effective_action；cancelled 时终止当前任务；error 时报告规则询问或写回失败并终止，不得继续执行依赖该选择的动作。
+   - `/rules/git-commit/empty_staging_mode/value`；
+   - `/rules/git-commit/pre_check_mode/value`；
+   - `/rules/project/large_file_size_limit/value`；
+   - `/rules/git-commit/commit_message_mode/value`；
+   - `/rules/project/repository_relation_mode/value`；
+   - `/rules/git-commit/post_commit_push_mode/value`。
+
+版本一致的正常路径不读取 `git-rules/SKILL.md`，也不检查完整规则清单、规则元数据或各 value。每个 value 只在流程实际使用时验证；目标 scope、key 或 value 缺失、类型错误或非法时，内部调用 `/git-rules repair SCOPE KEY --internal`，成功后只重新读取一次，失败或仍不可用时停止。任何 `/git-rules ask` 或其他配置写入成功后都丢弃旧快照，并一次性重新读取 VERSION、配置 version 和后续所需 value；不得静默使用内存默认值。
+
+所有 /git-rules ask 调用都必须先检查返回的 status：selected 时才使用 effective_action；cancelled 时终止当前任务；error 时报告规则询问或写回失败并终止，不得继续执行依赖该选择的动作。
 
 ## Step 2: 暂存区分析
 
@@ -79,60 +78,7 @@ pre_check_mode 在所有检查流程前解析。下表描述每种取值对应�
 | block | 执行全部检查，发现阻止级别问题时终止提交 |
 | prompt | 向用户介绍预检功能（大文件检测、敏感文件名检查、敏感信息扫描），调用 /git-rules ask git-commit pre_check_mode，再按返回的 effective_action 执行对应动作；询问选项和写回映射由 git-rules 按需读取 |
 
-各分支解析完成后，对暂存区执行以下检查：
-
-1. 识别新增、修改、删除、重命名、复制和二进制文件。
-2. 删除文件不扫描删除内容；重命名同时检查旧路径和新路径的敏感文件名。
-3. 二进制文件跳过文本内容扫描，但继续执行文件名和大小检查，并显示文件名、状态和大小。
-4. 无法读取暂存 blob、无法识别编码或扫描器执行失败时停止提交，不把失败视为未发现问题。
-
-#### 大文件检测
-
-large_file_size_limit 必须是正数，格式为数字加 B、KB、MB 或 GB，单位不区分大小写，按 1024 进位计算。例如 1MB 等于 1048576 字节。
-
-- 暂存 blob 大小超过阈值：警告并询问是否继续；
-- 所有非删除暂存 blob 总大小超过阈值的 10 倍：警告并询问是否继续；
-- 使用 git check-attr filter -- PATH 检查实际路径是否配置 Git LFS；
-- 如果匹配 LFS，提示应由 LFS 管理；不自动转换文件或修改 .gitattributes；
-- 用户拒绝或取消时终止，保留当前暂存状态。
-
-#### 敏感文件名检查
-
-按不区分大小写的完整路径或文件名匹配：
-
-- 直接阻止：私钥文件（*.key、*.pem、*.p12、*.pfx、*.jks）、凭据文件（credentials*）、环境文件（.env 及其变体）、id_rsa、id_ed25519；
-- 警告并确认：文件名包含 secret 或 password 的普通文件、*.pub 公钥文件；
-- 删除敏感文件不按“新增敏感文件”阻止，但仍在报告中说明删除动作。
-
-直接阻止时不提供“确认后继续”选项；警告级别必须由用户明确选择继续或终止。
-
-#### 敏感信息内容扫描
-
-内容扫描必须针对 git show :PATH 输出的暂存版本，使用 rg --pcre2 -n -I 或等价的 PCRE2 扫描器。正则不得再经过 Markdown 表格转义。rg 返回 0 表示匹配，1 表示无匹配，2 或更高值表示扫描失败。执行器必须丢弃原始匹配行，只保留文件路径、行号和规则名称。
-
-阻止级别模式：
-
-    AWS Access Key: \b(?:AKIA|ASIA)[0-9A-Z]{16}\b
-    AWS Secret Key: (?i)\b(?:aws_secret_access_key|aws_secret)\s*[:=]\s*['"]?[A-Za-z0-9/+=]{40}['"]?
-    GitHub Token: \b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,}\b
-    Private Key: -----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----
-    Stripe Secret Key: \b(?:sk|rk)_(?:test|live)_[0-9A-Za-z]{10,}\b
-    Slack Token: \bxox[bapors]-[0-9A-Za-z-]{10,}\b
-
-警告级别模式：
-
-    Generic API Key: (?i)\b(?:api[_-]?key|apikey)\s*[:=]\s*['"][0-9A-Za-z]{32,}['"]
-    Password in Code: (?i)\b(?:password|passwd|pwd)\s*[:=]\s*['"][^'"]{8,}['"]
-    Connection String: (?i)\b(?:mysql|postgres(?:ql)?|mongodb(?:\+srv)?)://\S{20,}
-    JWT Token: \beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b
-    Generic Secret: (?i)\b(?:secret|token)\s*[:=]\s*['"][0-9A-Za-z_-]{16,}['"]
-    Stripe Publishable Key: \bpk_(?:test|live)_[0-9A-Za-z]{10,}\b
-
-扫描结果只显示文件路径、行号和类型，不显示完整匹配值；不得直接向用户展示扫描器原始输出。
-
-- 阻止级别：立即终止，不允许用户绕过；
-- 警告级别：显示类型和位置，询问是否继续；
-- 用户拒绝或取消：终止并保留暂存状态。
+最终有效模式为 disabled 时不读取检查标准，直接进入 Step 3。最终有效模式为 warn 或 block 时，完整读取 `.claude/standards/staged-content-checks.md` 并按其中标准检查暂存内容；文件缺失、为空或不可读时停止提交，不自动创建或猜测检查标准。
 
 ## Step 3: 生成或校验 Commit Message
 
@@ -164,11 +110,11 @@ large_file_size_limit 必须是正数，格式为数字加 B、KB、MB 或 GB，
 
 - conventional_simple：单行 TYPE[(SCOPE)]: DESCRIPTION；
 - conventional_full：Conventional 标题、空行、body 和可选 footer；
-- custom：读取 .claude/sample/commit-message.md。
+- custom：读取 `.claude/standards/commit-message-format.md`。
 
 Conventional type 使用 feat、fix、docs、style、refactor、perf、test、build、ci、chore 或 revert。标题必须有合法 type、冒号和非空描述。
 
-custom 文件缺失、为空或无法读取时停止，并提示需要配置该文件、提示用户可通过文本描述引导会话创建对应文件；不在提交流程中自动创建或猜测 custom 规范。
+custom 标准文件缺失、为空或无法读取时停止，并提示需要配置该文件、提示用户可通过文本描述引导会话创建对应文件；不在提交流程中自动创建或猜测 custom 规范。
 
 ### Step 3d: 展示并确认
 
@@ -211,7 +157,23 @@ custom 文件缺失、为空或无法读取时停止，并提示需要配置该�
 
 只有 Step 4 成功后才能进入本步骤。
 
-### Step 5a: 解析远程上下文
+### Step 5a: 选择有效远程策略
+
+进入远程阶段时从 Step 1b 的快照取得并验证 repository_relation_mode。值为 unconfigured 时，先向用户说明两种模式的含义，再调用 /git-rules ask project repository_relation_mode；该初始化型询问只显示两种实际模式并必须写回，调用方按 effective_action 重新计算有效策略：
+
+- 视为独立仓库：本地和远程分别处理，遵守 post_commit_push_mode；
+- 视为同一仓库：将远程视为本地仓库协作的一部分，由统一 managed_safe_sync 策略自动处理远程事项。
+
+effective policy：
+
+- independent_repositories：
+  - 此时才读取 post_commit_push_mode；
+  - prompt：调用 /git-rules ask git-commit post_commit_push_mode；询问选项和写回映射由 git-rules 按需读取。effective_action 为 push 时继续解析远程上下文；为 skip 时不读取远程状态，明确报告尚未同步并进入 Step 6；
+  - always：继续解析远程上下文；
+  - never：不读取远程状态，明确报告尚未同步并进入 Step 6。
+- same_repository：使用 Step 5c 定义的 managed_safe_sync 流程。本次 post_commit_push_mode 的存储值保留，但被该策略覆盖，不参与本次行为。
+
+### Step 5b: 解析远程上下文
 
 1. 执行 git remote，命令失败时报告错误并结束远程阶段；输出为空时报告未配置远程仓库并进入 Step 6。
 2. 执行 git branch --show-current：
@@ -221,23 +183,9 @@ custom 文件缺失、为空或无法读取时停止，并提示需要配置该�
 4. 有 upstream 时使用 upstream 的 remote 和 branch。
 5. 没有 upstream 时：
    - same_repository：若只有一个可用 remote 且存在 push URL，使用当前分支名作为远程分支候选，并按 Step 5c 自动设置 upstream；多个可用 remote 时询问用户，用户取消则停止远程阶段；没有可用 remote 时跳过远程阶段；
-   - independent_repositories：不猜测目标；需要 push 时报告缺少 upstream 并停止自动 push。
+   - independent_repositories：不猜测目标；报告缺少 upstream 并停止自动 push。
 6. 所有后续 fetch 和 push 都必须使用明确的 remote、branch 和 refspec。
-
-### Step 5b: 选择有效远程策略
-
-repository_relation_mode 为 unconfigured 时，先向用户说明两种模式的含义，再调用 /git-rules ask project repository_relation_mode；该初始化型询问只显示两种实际模式并必须写回，调用方按 effective_action 重新计算有效策略：
-
-- 视为独立仓库：本地和远程分别处理，遵守 post_commit_push_mode；
-- 视为同一仓库：将远程视为本地仓库协作的一部分，由统一 managed_safe_sync 策略自动处理远程事项。
-
-effective policy：
-
-- independent_repositories：
-  - prompt：调用 /git-rules ask git-commit post_commit_push_mode；询问选项和写回映射由 git-rules 按需读取。effective_action 为 push 时使用明确的 REMOTE HEAD:BRANCH refspec，失败时停止；为 skip 时不推送并明确报告尚未同步；
-  - always：有明确 upstream 时自动 push；没有 upstream 时停止并报告；
-  - never：不自动 push，明确报告尚未同步。
-- same_repository：使用 git-rules 的 managed_safe_sync 策略，语义见 git-rules 的 Policy inheritance。本次 post_commit_push_mode 的存储值保留，但被该策略覆盖，不参与本次行为。
+7. independent_repositories 使用明确的 git push REMOTE HEAD:BRANCH 执行已在 Step 5a 决定的推送，失败时停止；same_repository 进入 Step 5c。
 
 ### Step 5c: same_repository 的安全同步
 
