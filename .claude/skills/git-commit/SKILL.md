@@ -244,13 +244,13 @@ effective policy：
 1. 使用 git ls-remote --heads REMOTE refs/heads/BRANCH 确认远程分支是否存在；退出码 0 且输出为空表示分支不存在，其他失败停止远程阶段。
 2. 如果远程分支不存在，使用明确的 git push --set-upstream REMOTE HEAD:BRANCH 创建跟踪关系；这适用于当前分支发布到唯一可用 remote。
 3. 如果远程分支存在，执行 git fetch REMOTE refs/heads/BRANCH:refs/remotes/REMOTE/BRANCH；失败时停止 push 并报告原始错误。
-4. 当前 commit 没有父提交且远程分支已存在时，无法证明双方基线一致，停止自动 push。
-5. 当前 commit 有父提交时，先使用 git rev-parse HEAD^、git rev-parse REMOTE/BRANCH 和 git rev-list --count REMOTE/BRANCH..HEAD 取得比较值；仅当以下条件同时满足才允许自动 push：
-   - 远端提交恰好等于 HEAD^；
-   - REMOTE/BRANCH..HEAD 的提交数恰好为 1；
+4. 使用 git rev-parse REMOTE/BRANCH 取得远端提交，使用 git merge-base --is-ancestor REMOTE/BRANCH HEAD 验证远端提交是否为本地 HEAD 的祖先，并使用 git rev-list --count REMOTE/BRANCH..HEAD 取得本地领先提交数。git merge-base --is-ancestor 返回 0 表示祖先关系成立，返回 1 表示不成立，其他退出码表示比较失败。
+5. 仅当以下条件同时满足才允许自动 push：
+   - 远端提交是本地 HEAD 的祖先，不存在远端独有提交；
+   - REMOTE/BRANCH..HEAD 的提交数大于 0；
    - 比较命令全部成功。
-6. 条件满足时执行明确的 git push REMOTE HEAD:BRANCH；无 upstream 时使用 --set-upstream。
-7. 条件不满足时使用 git rev-list --left-right --count REMOTE/BRANCH...HEAD 取得 ahead/behind 数量，停止自动远程写入，报告本地分支、远程分支、本地 HEAD、远端提交及数量。
+6. 条件满足时执行明确的 git push REMOTE HEAD:BRANCH；无 upstream 时使用 --set-upstream。允许一次推送一个或多个本地领先提交。
+7. 祖先关系不成立或本地领先提交数不大于 0 时，使用 git rev-list --left-right --count REMOTE/BRANCH...HEAD 取得 ahead/behind 数量，停止自动远程写入，报告本地分支、远程分支、本地 HEAD、远端提交及数量。
 8. fetch、比较或 push 任一命令失败时停止远程阶段；本地 commit 保留。push 期间远端再次变化导致失败时，不自动重试，重新报告远程状态。
 
 ## Step 6: 提交后报告

@@ -1,7 +1,7 @@
 # git-commit / git-rules SKILL.md 结构与抽取分析
 
 - 分析对象：`.claude/skills/git-commit/SKILL.md`、`.claude/skills/git-rules/SKILL.md`、`.claude/git-claude-rules.json`
-- 快照基线：commit `06a32b0`。**本文档引用的行号均以该版本为准**；2026-09-21 的重构已使部分行号失效，因此每项都附有实际处理结果，行号仅用于回溯问题现场。
+- 快照基线：commit `06a32b0`。**本文档引用的原始问题行号均以该版本为准**；状态于 2026-09-27 按 commit `d3a0b45` 复核，当前实现行号不再沿用基线行号。
 - 目的：找出文档内的重复步骤，判断哪些部分适合拆分为独立 skill、哪些适合收敛为 hook
 
 ## 状态总览
@@ -15,19 +15,20 @@
 | 一 · 5 配置询问模式重复四次 | 已收敛为 `git-rules` 的 `ask` 分支 |
 | 一 · 6 `same_repository` 语义两份 | 已归 `git-rules` |
 | 一 · 7 错误处理原则与正文重叠 | 已收敛为补充清单 |
+| 二 询问定义外置 | **已实施**：按规则拆到 `references/ask/`，并增加缺失/不一致时硬失败校验 |
 | 三 三项 PreToolUse hook | **未实施** |
 | 五 · 3 attribution 张力 | **未处理** |
 | 五 · 5 多 remote 超出 AskUserQuestion 选项上限 | **待决策** |
-| 六 版本对齐（version 比对 + 通用对齐算法） | **未实施** |
+| 六 版本对齐（version 比对 + 通用对齐算法） | **已实施**：新增 `calibrate`，首次读取配置时校验一次 |
 
 行数变化：
 
 | 文件 | 基线 `06a32b0` | 当前 |
 | --- | --- | --- |
-| `git-commit/SKILL.md` | 299 | 268 |
-| `git-rules/SKILL.md` | 270 | 261 |
+| `git-commit/SKILL.md` | 299 | 274 |
+| `git-rules/SKILL.md` | 270 | 343 |
 
-`git-rules` 净减 9 行是在**新增了两个分支**（`ask`、`无参数调用`，合计约 37 行）的前提下达成的，实际删除量更大。
+`git-rules` 当前比基线增加 73 行，主要来自版本校准协议、按规则分派的 `ask_mode`、映射文件校验和更完整的分支契约。此前“净减 9 行”的统计只适用于 2026-09-21 的中间状态，现已失效。
 
 ---
 
@@ -80,7 +81,7 @@
 
 **原建议**：抽为文档内的一次性共享小节。
 
-**实际处理**：抽为 `git-rules` 的独立分支 `### ask SCOPE KEY [--only VALUE,...]`。它比文档内小节更好，因为 `git-rules` 已经持有 rules 数据模型、`labels` 和 `set` 分支，共享小节仍要反过来调它。四处调用点各自只需一行。
+**实际处理**：抽为 `git-rules` 的独立分支 `### ask SCOPE KEY`。它比文档内小节更好，因为 `git-rules` 已经持有 rules 数据模型、`labels` 和写回契约，共享小节仍要反过来调它。调用点只负责检查返回状态并使用 `effective_action`；候选项和映射由 `git-rules` 按规则加载，不再使用早期的 `--only` 参数。
 
 **边界（后补）**：`ask` 只在「首次配置」或「允许用户改变持久行为」时适用。语义上要求「每次都询问」的取值不得用它——它提供的「总是使用」会破坏那个语义。
 
@@ -114,14 +115,13 @@
 
 所以下方候选的**正当理由是复用性和可维护性，不是 token**。
 
-### 另一条被否决的路径：附属文件外置
+### 已采用的路径：按规则外置询问定义
 
-文档推荐的形态是「薄 SKILL.md + `references/` 附属文件」，但**本项目不采用**，理由是分发完整性：
+v0.2.0 已采用 `references/ask/{scope}/{key}.md`，但只外置每条规则的提问文案、选项和动作/持久值映射；canonical schema、命令分派和通用询问协议仍保留在主 `SKILL.md`。
 
-- 用户把 skill 复制到自己项目时若只复制了 SKILL.md，附属文件缺失**不会报错**——模型会自己编一份规范出来。静默走样比直接失败糟得多。
-- 版本升级时附属文件与正文可能不同步。
+此前担心的“附属文件缺失后模型静默补写”已通过硬校验解决：`ask` 只读取当前规则对应的单个映射文件；文件缺失、不可读，或其中的 scope、key、ask_mode、控制值与 canonical 不一致时，返回 `status=error`，不询问也不写配置。新增可询问规则时，也明确要求同时创建对应映射文件。
 
-替代方案是**原地压缩**：见下方「已实施」。若将来仍要外置，需先加一道自检（缺失即停止并提示「请完整复制整个 skill 目录」），或把整套东西做成 plugin（plugin 以目录为单位安装升级，物理上不存在漏拷）。
+当前共有 5 个询问定义文件，分别覆盖 `repository_relation_mode`、`empty_staging_mode`、`commit_message_mode`、`post_commit_push_mode` 和 `pre_check_mode`。这一实现接受“复制时必须携带完整 skill 目录”的分发约束，换取主文档与逐规则交互细节解耦。
 
 ### 候选清单（保留，理由已修正）
 
@@ -132,15 +132,17 @@
 | `/git-message` | `SKILL.md:140-187`（`Step 3`） | ~48 行 | git-amend / squash / PR 描述生成 |
 | `/git-context` | `SKILL.md:16-25`（`Step 1a`） | ~10 行 | 所有 git skill 的前置检查 |
 
-`/git-sync` 是 `SKILL.md:256` 自己记录的 TODO（是否改为调用专用 `/git-fetch`）。那行已删除——它引用的 `scratch/remote-repository-policy.md` 不存在，且该行本身是开发期旁白而非执行指令。决策记录在本文件。
+`/git-sync` 是基线 `SKILL.md:256` 自己记录的 TODO（是否改为调用专用 `/git-fetch`）。那行已删除——当时它引用的 `scratch/remote-repository-policy.md` 尚不存在，且该行本身是开发期旁白而非执行指令。该文件目前已作为独立设计记录纳入仓库，但不再被 skill 运行时引用。
 
 `/git-precheck` 的额外理由：它的输入输出契约干净（暂存集合 → 问题列表），且正则表与提交流程的变更理由不同。
 
-### 已实施的压缩（替代外置）
+### 已实施的 schema 原地压缩
 
 `git-rules` 的 canonical schema 原本是一份 78 行的 pretty-printed JSON。其中绝大部分体积来自重复结构：每条规则的 `options` 各占一行、每个标签再各占一行。换成「一个通用骨架 + 一张六行的规则表」后减少 46 行，**且不新增任何文件**。
 
 骨架部分特意保留字面形式不压缩——模型要据此写出精确的 JSON，可照抄比省几行重要。
+
+**当前状态补充**：这项 schema 表格压缩仍然保留，但它不再是“外置”的替代方案；v0.2.0 同时采用了 schema 原地压缩和询问定义外置。由于新增校准及询问契约，`git-rules/SKILL.md` 的总行数已增至 343 行。
 
 ---
 
@@ -199,7 +201,7 @@
 
 ## 五、其他发现的问题
 
-1. **死引用**（已解决）：`SKILL.md:256` 引用 `scratch/remote-repository-policy.md`，该文件不存在，`scratch/` 目录当时也未创建。整行已删除，决策记录转移到本文件。
+1. **死引用**（已解决）：基线中的 `SKILL.md:256` 曾引用当时不存在的 `scratch/remote-repository-policy.md`，执行指令中的该引用已删除。该文件目前已经存在，但只是独立的设计记录，不再是 skill 运行时依赖。
 2. **拼写错误**（已解决）：`SKILL.md:78` 的 `AskUserQuesion` 已随标签表删除。
 3. **attribution 规则张力**（未处理）：`SKILL.md:206` 要求"不要把你自己添加到作者或合作者一栏"，而 Claude Code 的默认 attribution 指引要求在 commit 末尾添加 `Co-Authored-By: Claude Code`。`Co-Authored-By` 与"作者栏"严格说不是同一回事，但两条规则存在冲突解读空间，建议写清究竟禁止哪一种。
 4. **交互点未统一**（部分处理）：`Step 3a` 以 `$ARGUMENTS` 非空作为分支条件，`Step 5b` 又在 `unconfigured` 时插入询问，全流程没有交互入口清单。已在 `git-rules` 侧补上 AskUserQuestion 的适用约束，`git-commit` 侧未动。
@@ -209,33 +211,22 @@
 
 `git-rules` 无参数调用时，模型曾直接弹出 AskUserQuestion——因为 `Command dispatch` 里只写了"进入面向用户的交互式规则管理"，没有定义终止边界。已改为显式的只读分支「无参数调用」：展示配置 → 打印用法提示 → 说明可以口述修改 → 立即结束，并写明不调用 AskUserQuestion。
 
-同一次排查还发现，新加的 `ask` 分支本身也有同类缺陷：`pre_check_mode` 有 5 个候选值，再叠加「总是使用 / 仅本次」无法塞进单次提问。已改为**一次调用、两个问题**，并加硬约束：候选值超过 4 个时调用方必须先用 `--only` 收窄。
+同一次排查还发现，早期 `ask` 分支本身也有同类缺陷：`pre_check_mode` 的状态值与持久化选择无法安全塞进单个问题。v0.2.0 已改为由 canonical 的 `ask_mode` 决定询问协议，并从当前规则专属的映射文件加载定义：`initialize` 使用一个问题，`inline_persistence` 把持久化意图放进动作选项，`separate_persistence` 使用一次调用中的两个问题。`pre_check_mode` 采用最后一种模式；调用方不再传 `--only`，也不复制候选值或映射。
 
-**通用教训**：AskUserQuestion 的 4 选项上限是这套规则集的真实约束（6 条规则、每条 3–5 个选项，永远无法用一次询问表示）。任何涉及批量规则的交互设计都必须先过一遍这个上限，否则会在运行时才暴露。
+**通用教训**：AskUserQuestion 的单问题 4 选项上限仍是硬约束。当前实现把它落实为 `git-rules` 的全局规则：每次只询问一条配置规则，并由该规则的 `ask_mode` 与映射文件保证每个问题不超过上限；多条规则不合并询问。
 
 ---
 
 ## 六、建议的落地顺序（修订）
 
-已完成的按第一节，下列是剩余项的优先级：
+### 已完成
 
-1. **版本对齐**（收益最高，因为它今天完全缺失）。现状：`version` 字段在 schema 中定义了，但**没有任何地方比对过它**——`repair` 只在规则缺失或非法时逐项补默认值，不 bump 版本、不感知版本差异。建议用通用算法而非逐版本迁移表（后者会随版本膨胀，长期逼你外置）：
+1. **版本对齐**：v0.2.0 已新增 `calibrate` 分支和 `Version calibration` 通用算法。配置版本较低、缺失或非法时按当前 canonical 对齐；配置版本较高时不写入；未知旧规则保留；失效值回退默认值并报告。`git-commit` 的 Step 1b 已接入内部校准，并规定一次任务只在首次读取配置时比对一次。
+2. **询问分派重构**：`ask_mode`、逐规则映射文件、文件一致性校验和统一返回契约均已落地，旧的 `--only` 收窄方案已移除。
 
-   ```text
-   读取 config.version，与 skill 声明的 SCHEMA_VERSION 比对：
-     相等          → 逐项校验（现有 repair 逻辑）
-     config < 当前 → 对齐：schema 中每条规则缺失或非法则补默认值；
-                     配置里有、schema 里没有的保留并标记未知（不删用户数据）；
-                     写回后把 version 对齐到 SCHEMA_VERSION
-     config > 当前 → 停止，提示 skill 版本过旧，不写入
-   ```
+### 剩余优先级
 
-   该算法不随版本增长——只需要「当前 schema」，不需要「0.0.1→0.0.2 的迁移脚本」。迁移前复用 `repair` 已有的恢复记录机制存副本。**改动会同时触及 `git-commit` 的 `Step 1b` 和 `git-rules` 的 repair 分支，做完需要造一份残缺的 v0.0.1 配置实测迁移。**
-
-2. **两项 PreToolUse hook**：危险命令守卫、`--no-verify` 拦截。把提示词承诺变成机制约束。
-
-3. **block 级别预检 hook**：依赖 `/git-precheck` 的抽取或至少共享同一套 patterns。
-
-4. **`/git-sync` 与 `/git-message` 的抽取**：互相独立，可并行。**理由是可复用性，不是 token**。
-
-5. **收尾项**：attribution 张力、多 remote 的选项上限、`git-commit` 侧交互点统一。
+1. **两项 PreToolUse hook**：危险命令守卫、`--no-verify` 拦截。把提示词承诺变成机制约束。
+2. **block 级别预检 hook**：依赖 `/git-precheck` 的抽取或至少共享同一套 patterns。
+3. **`/git-sync` 与 `/git-message` 的抽取**：互相独立；理由是可复用性，不是 token。
+4. **收尾项**：澄清 attribution 规则；为多 remote 选择设计不超过 4 个选项的交互；整理 `git-commit` 仍然内联的 AskUserQuestion 入口。
