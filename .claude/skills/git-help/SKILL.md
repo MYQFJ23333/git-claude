@@ -45,6 +45,7 @@ Skill registry 是本 skill 唯一的数据来源，只列出本仓库实际存�
 | 技能 | 调用方式 | 作用 |
 | --- | --- | --- |
 | git-commit | /git-commit [message] | 分析暂存内容，按项目规则生成或校验 commit message，执行提交前安全预检，并按远程协作策略处理提交后的同步 |
+| git-push | /git-push [--remote REMOTE] [--branch BRANCH] | 解析目标远程与分支，更新远程状态并预警分叉，按远程协作策略执行推送并自动设置 upstream，仅提供 force-with-lease 安全强推 |
 | git-rules | /git-rules <命令> | 管理项目级规则配置 .claude/git-claude-rules.json，支持 show、set、reset、init、repair、calibrate、ask、export、import |
 
 维护规则：

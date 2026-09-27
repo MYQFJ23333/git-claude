@@ -49,20 +49,32 @@ Shared data model、Policy inheritance 或 Call contract 中。
 
 配置文件固定为 .claude/git-claude-rules.json。
 
-- 需要读取配置的操作，先确认文件存在且可读取；
-- 文件不存在时，用户模式可询问是否初始化，内部模式直接执行 init；
+- 其他 Git skill 在任务开始时一次性读取配置和 VERSION，核对配置 version 后缓存本任务需要的 value；版本一致时不必调用或读取本 skill 正文；
+- 版本核对不等同于完整配置校验：不得因为读取规则而扫描完整规则清单、元数据或未使用的 value；
+- 文件不存在时，用户模式可询问是否初始化；其他 Git skill 按「Configuration snapshot and recovery」处理；
 - 文件读取失败时停止，不修改、不覆盖原文件；
 - JSON 非法或整体结构错误时，只有 repair 分支可以恢复；
 - 单个规则缺失或 value 非法时，repair 分支可以只修复该项；
-- 所有规则实际值位于 rules.{scope}.{key}.value；scope 为 git-commit 时使用 rules["git-commit"]；
+- 所有规则实际值统一使用 JSON Pointer `/rules/{scope}/{key}/value` 表示，例如 `/rules/project/repository_relation_mode/value` 和 `/rules/git-commit/commit_message_mode/value`；
 - 修改规则时必须保留 options、labels、description、set_at 等元数据。
+
+### Configuration snapshot and recovery
+
+这是所有 Git skill 使用配置快照、版本核对和故障恢复的统一协议：
+
+1. 任务开始时分别读取 `.claude/skills/git-rules/VERSION` 和 `.claude/git-claude-rules.json` 一次。校验 VERSION 是单行 `MAJOR.MINOR.PATCH`，并确认配置可读取且 JSON 可解析；此时不验证规则清单、规则元数据或各 value。
+2. 比较配置 version 与 VERSION：相等时缓存本任务可能使用的 value 并继续，不读取 git-rules/SKILL.md；不相等、缺失或格式非法时内部调用 `/git-rules calibrate --internal`，成功后重新读取配置快照。配置版本高于基准或校准失败时停止。
+3. 文件不存在、JSON 非法或 rules 整体结构不可用，导致无法取得快照时，内部调用 `/git-rules repair --internal`；文件不可读时不尝试覆盖。
+4. 具体 value 只在流程实际使用它时，按调用方支持的值或类型验证。目标 scope、key 或 value 缺失、类型错误或非法时，内部调用 `/git-rules repair SCOPE KEY --internal`。
+5. ask、set、repair、init、calibrate 或其他配置写入成功后必须丢弃旧快照，并一次性重新读取 VERSION、配置 version 和本任务后续可能使用的 value。
+6. 校准或恢复后只重新读取一次；仍不可用时停止，不循环处理，也不使用内存默认值继续。
 
 ### Canonical schema
 
 顶层结构固定为：
 
     {
-      "version": "0.2.0",
+      "version": "<VERSION 文件中的基准版本>",
       "created_at": "YYYY-MM-DD",
       "updated_at": "YYYY-MM-DD",
       "rules": {
@@ -78,7 +90,7 @@ Shared data model、Policy inheritance 或 Call contract 中。
       }
     }
 
-顶层 version 既是配置文件写入的字段，也是判断是否需要校准的基准值，语义见 Project version。
+顶层 version 是配置文件记录的已校准版本；校准基准从同目录 VERSION 文件读取，语义见 Project version。
 
 可选的 type 字段用于类型化规则；没有 options 的规则省略 options 和 labels。询问模式和控制值只定义在本 skill 中，不写入配置文件。
 
@@ -117,9 +129,9 @@ large_file_size_limit 接受正数加 B、KB、MB 或 GB，单位不区分大小
 
 ### Project version
 
-顶层 version 是 Git Skills 项目的版本号。基准值由本文件 Canonical schema 中的 version 字段给出，是本 skill 判断是否需要校准的唯一依据，不需要任何额外文件或外部来源。
+基准版本固定存放在 `.claude/skills/git-rules/VERSION`。该文件只包含一行 `MAJOR.MINOR.PATCH` 版本号，不包含标签、注释或其他字段；它是其他 Git skill 的开头版本核对，以及 init、show、calibrate、export、import 等需要版本信息的分支所使用的唯一基准来源。文件缺失、不可读、为空或格式非法时，停止需要版本信息的任务或分支，不从 SKILL.md、配置文件或内存默认值猜测基准版本。
 
-配置文件中的 version 由 init 和 calibrate 写入，记录该配置是在哪个项目版本下核对过的。比对只看配置中的 version 与基准是否相等，不解释各级数字的含义。
+配置文件中的 version 由 init 和 calibrate 写入，记录该配置是在哪个项目版本下核对过的。相等判断使用完整字符串；需要判断高低时，按 MAJOR、MINOR、PATCH 三个非负整数依次比较。
 
 ### Version calibration
 
@@ -129,7 +141,7 @@ large_file_size_limit 接受正数加 B、KB、MB 或 GB，单位不区分大小
 
 - 配置 version 高于基准版本：视为配置来自更新版本的项目，停止，不写入；
 - 配置 version 缺失、非法或低于基准版本：需要对齐；
-- 配置 version 等于基准版本：仍需校验规则清单，canonical 的 scope 与 key 集合和配置不一致时，说明规则表已变更而版本号未反映，按需要对齐处理；集合一致时才跳过对齐。
+- 配置 version 等于基准版本：calibrate 仍需校验规则清单，canonical 的 scope 与 key 集合和配置不一致时，说明规则表已变更而版本号未反映，按需要对齐处理；集合一致时才跳过对齐。
 
 对齐一律直接执行，不发起询问，也不等待用户确认。对齐过程中的异常不中断对齐，改为记入报告：
 
@@ -139,7 +151,7 @@ large_file_size_limit 接受正数加 B、KB、MB 或 GB，单位不区分大小
 
 用户已选的 value 是否仍然有效，以 canonical 表中该规则的 options 加控制值为准；无 options 且无控制值的规则按 type 校验。配置中存在但 canonical 已无的规则视为废弃，保留原值且不参与策略读取。
 
-版本校验在一次任务中只执行一次，由该任务内首次读取配置的 ensure configuration 承担。校验结束后，本次任务内一律不再重复比对版本，也不再重复触发 calibrate；同一配置在任务中被多次读取时，直接使用既有的校验结果。只有 ensure configuration 和 calibrate 两个入口会比对版本，set、ask、show 等分支不自行比对。
+其他 Git skill 按 Configuration snapshot and recovery 在任务开始时比较配置 version 与 VERSION，但版本一致时不检查完整规则清单。set 和 ask 不重复比较版本；show 只读取 VERSION 和配置 version 用于展示差异，不自动校准；calibrate 负责版本不一致时的完整版本与规则清单校验。一次 calibrate 中只读取一次 VERSION，并复用该基准值完成全部比较和写入。
 
 ## Operation branches
 
@@ -160,7 +172,7 @@ large_file_size_limit 接受正数加 B、KB、MB 或 GB，单位不区分大小
 ### show
 
 1. 读取并校验配置；
-2. 显示基准版本与配置中的 version，并在两者不一致时提示可用 calibrate 对齐；
+2. 从 VERSION 读取基准版本，显示基准版本与配置中的 version，并在两者不一致时提示可用 calibrate 对齐；
 3. 按作用域显示每个规则的当前 value、用户可设置值、描述和默认状态；控制值可以作为当前状态显示，但不得混入用户可设置值；
 4. 不显示未知字段中的原始内容；
 5. 配置缺失时按用户模式询问是否进入 init。
@@ -191,7 +203,7 @@ large_file_size_limit 接受正数加 B、KB、MB 或 GB，单位不区分大小
 1. 确认 .claude 目录存在，不存在则创建；
 2. 文件已存在时不覆盖并报告已存在；
 3. --replace 只允许 repair 在完成恢复记录后内部使用，直接用户调用必须拒绝；
-4. 生成包含全部 canonical 默认规则的配置，其中 version 写入 Canonical schema 中的基准版本；
+4. 从 VERSION 读取基准版本，生成包含全部 canonical 默认规则的配置，其中 version 写入该基准版本；
 5. --internal 时不提示用户进入交互式配置；
 6. 用户模式下可在初始化后询问是否配置常用规则；
 7. 写入后重新读取并校验。
@@ -236,17 +248,18 @@ repair 是配置修复分支，不是所有命令的必经步骤。
 
 把配置对齐到基准版本，只处理结构完好但版本或规则清单与当前项目不一致的情况。结构损坏由 repair 处理，本分支不自行恢复。
 
-1. 确认配置存在、可读取且结构有效；结构无效时转 repair，不在本分支内恢复；
-2. 按 Version calibration 判定是否需要对齐；不需要对齐时不写入，直接报告当前版本已是最新；
-3. 配置 version 高于基准版本时停止，报告差异，不写入；
-4. 需要对齐时，逐条处理 canonical 中的规则：
+1. 读取并校验 VERSION 中的基准版本；失败时停止，不修改配置；
+2. 确认配置存在、可读取且结构有效；结构无效时转 repair，不在本分支内恢复；
+3. 按 Version calibration 判定是否需要对齐；不需要对齐时不写入，直接报告当前版本已是最新；
+4. 配置 version 高于基准版本时停止，报告差异，不写入；
+5. 需要对齐时，逐条处理 canonical 中的规则：
    - 配置中缺失：按该规则的默认 value 与完整元数据补齐，写入新的 set_at；
    - 配置中存在且 value 仍然有效：合法性按 canonical 的 options 加控制值判断；保留原有 value 和 set_at，只刷新 options、labels、description 和 type；
    - 配置中存在但 value 不在新合法存储值集合中：写回该规则的默认 value，并记入报告的异常项，不中断对齐；
-5. 配置中存在但 canonical 已无的规则：不删除，保留原样，在报告中列出；
-6. 全部处理成功后，把 version 更新为基准版本，并更新 updated_at；
-7. 使用 set 的原子写入和重新校验规则；
-8. 用户模式下只输出一行变更摘要，说明补齐、刷新的规则数量；存在值失效改写或版本高于基准时，单独报告这些异常项，列出规则名与原值、新值；内部模式只返回状态。
+6. 配置中存在但 canonical 已无的规则：不删除，保留原样，在报告中列出；
+7. 全部处理成功后，把 version 更新为基准版本，并更新 updated_at；
+8. 使用 set 的原子写入和重新校验规则；
+9. 用户模式下只输出一行变更摘要，说明补齐、刷新的规则数量；存在值失效改写或版本高于基准时，单独报告这些异常项，列出规则名与原值、新值；内部模式只返回状态。
 
 本分支不发起任何询问，也不等待用户确认。正常对齐不需要用户介入，只有值失效改写和版本高于基准这两类异常才需要在报告中呈现。
 
@@ -258,7 +271,7 @@ repair 是配置修复分支，不是所有命令的必经步骤。
 
 #### 通用流程和返回契约
 
-1. 确认配置存在、可读取且结构有效，按需完成修复；
+1. 使用调用方已经完成版本核对的配置快照读取目标规则；若 ask 被直接调用而没有现成快照，则先按 Configuration snapshot and recovery 建立快照；
 2. 校验 SCOPE/KEY，并读取 canonical 中的 ask_mode 和控制值；调用方不传候选值或展开映射；
 3. ask_mode 为 none 时拒绝询问，提示调用方使用 set；
 4. ask_mode 不是 none 时，只读取 `.claude/skills/git-rules/references/ask/{scope}/{key}.md` 取得本次询问定义；路径中的 scope 和 key 使用 canonical 原值，不做大小写或命名转换；
@@ -297,35 +310,29 @@ repair 是配置修复分支，不是所有命令的必经步骤。
 
 ### export
 
-1. 读取并校验配置；
-2. 输出 canonical JSON；
-3. 配置读取或校验失败时停止。
+1. 读取并校验 VERSION 中的基准版本；
+2. 读取并校验配置；
+3. 输出使用该基准版本的 canonical JSON；
+4. VERSION、配置读取或校验失败时停止。
 
 ### import
 
-1. 读取导入文件；读取失败停止；
-2. 解析并校验完整结构；
-3. 导入文件的 version 高于基准版本时拒绝导入，报告差异，不作任何写入；
-4. 对每个规则按 canonical 的 options 加控制值校验 value；无 options 且无控制值时按 type 校验；
-5. 询问采用合并还是覆盖；
-6. 写入前保存当前配置的恢复副本；
-7. 原子写入；
-8. 按 calibrate 对齐到基准版本，再重新读取并校验最终配置。
+1. 读取并校验 VERSION 中的基准版本；失败时停止；
+2. 读取导入文件；读取失败停止；
+3. 解析并校验完整结构；
+4. 导入文件的 version 高于基准版本时拒绝导入，报告差异，不作任何写入；
+5. 对每个规则按 canonical 的 options 加控制值校验 value；无 options 且无控制值时按 type 校验；
+6. 询问采用合并还是覆盖；
+7. 写入前保存当前配置的恢复副本；
+8. 原子写入；
+9. 按 calibrate 对齐到基准版本，再重新读取并校验最终配置。
 
 ## Call contract for other Git skills
 
-其他 skill 不需要复制 git-rules 的章节结构，也不需要执行与自身无关的命令。只需在需要规则时调用相应分支，并遵守以下结果契约：
+其他 skill 不需要在任务开始时调用或完整读取 git-rules 正文，也不需要执行与自身无关的命令。只需读取轻量 VERSION、建立一次配置快照，并遵守以下结果契约：
 
-- ensure configuration：
-  - 缺失 → 内部 init；
-  - 读取失败 → 停止调用方任务；
-  - 整体结构错误 → 内部 repair；
-  - 单项缺失或非法 → 内部 repair SCOPE KEY；
-  - 版本或规则清单与基准版本不一致 → 内部 calibrate，静默完成，不询问、不等待确认；
-  - 配置 version 高于基准版本 → 不写入，调用方按现有值继续执行，不视为错误；
-  - 版本校验在一次任务中只执行一次：任务内首次读取配置时完成比对和必要的校准，其后不再重复比对，也不重复触发 calibrate；
-  - 修复或校准后重新读取并校验。
-- read rule：读取 rules.{scope}.{key}.value；git-commit scope 使用 rules["git-commit"]。
+- configuration snapshot：按 Configuration snapshot and recovery 比较配置 version 与 VERSION，并一次性缓存本任务需要的 value；版本一致时不扫描完整规则清单。
+- read rule：从快照读取 JSON Pointer `/rules/{scope}/{key}/value` 指向的值。只在实际使用时验证目标 value，不扫描其他规则；失败时才进入统一恢复流程。
 - ask rule：需要用户选择可配置项时只传 SCOPE/KEY 调用 ask 分支，由它按 ask_mode 展示问题、把控制值展开为具体动作并处理写回；调用方只消费 `status`、`effective_action`、`persisted` 和 `stored_value`，不要复制标签、候选项、展开映射或写回逻辑；
 - write rule：内部调用 set，不能直接改 JSON；
 - resolve remote policy：读取 repository_relation_mode，并计算本次有效远程策略；
