@@ -2,6 +2,13 @@
 
 > 帮助使用者用 Claude Code 管理 Git 项目，无需手动敲 Git 命令
 
+> **现状对照（2026-10-11）——本文档是项目初期愿景蓝图，不是实施规范**
+>
+> - **已实现**：`/git-help`（本蓝图未规划）、`/git-rules`、`/git-commit`、`/git-push`。
+> - **已进入 0.4.0 实施计划**：`/git-extract`、`/git-pr`、`/git-release`、`/git-sync`——其中 `/git-pr`、`/git-release` 吸收本蓝图同名条目但职责已收敛（不做 semver 自动计算与 CHANGELOG）；`/git-sync` 语义已**重定义**为「基准分支 merge 回工作分支」，与本文件「提交与同步」章的 fetch+rebase+push 流水线不同。见 `scratch/designs/release-flow-generic-skills-design.md`。
+> - 其余技能条目与「推荐实现优先级」均为未实现愿景；任何引用以 `.claude/skills/` 下的实际技能文件与根 CLAUDE.md 为准。
+> - 「规则存储系统」「Skill 兼容性设计」两章的路径、schema 与命令已被现行配置体系取代，见章内标注。
+
 ---
 
 ## 📊 状态与查看
@@ -244,7 +251,9 @@
 
 ---
 
-## 💾 规则存储系统
+## 💾 规则存储系统（已过时，仅供历史参考）
+
+> ⚠️ **本章已被现行配置体系取代，不再更新**：现行配置文件是 `.claude/git-claude-rules.json`（非 `rules.json`）；规则条目为 `value / options / labels / description / set_at` schema（非 `action`）；自愈由 canonical 规则表驱动的 `repair` / `calibrate` 分支实现（非 `create_rules_json()`）；技能安装在项目 `.claude/skills/` 而非全局 `~/.claude/skills/`。以根 CLAUDE.md「架构」章与 `.claude/skills/git-rules/SKILL.md` 为准。
 
 ### 架构设计
 
@@ -423,7 +432,9 @@ $(pwd)/.claude/rules.json        ← 每个项目独立配置（运行时读取�
 
 ---
 
-## 🔄 Skill 兼容性设计
+## 🔄 Skill 兼容性设计（已过时，仅供历史参考）
+
+> ⚠️ 本章的「执行前检查」引用的 `.claude/rules.json` 与全局安装模式均已不存在；现行前置是配置快照协议（根 CLAUDE.md「配置快照协议」章），默认行为由 canonical 规则表定义。本章保留仅作历史参考。
 
 ### 全局安装支持
 

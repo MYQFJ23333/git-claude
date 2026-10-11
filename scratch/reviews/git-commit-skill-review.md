@@ -1,7 +1,7 @@
 # git-commit / git-rules SKILL.md 结构与抽取分析
 
 - 分析对象：`.claude/skills/git-commit/SKILL.md`、`.claude/skills/git-rules/SKILL.md`、`.claude/git-claude-rules.json`
-- 快照基线：commit `06a32b0`。**本文档引用的原始问题行号均以该版本为准**；状态于 2026-09-27 按 commit `d3a0b45` 复核，当前实现行号不再沿用基线行号。
+- 快照基线：commit `06a32b0`。**本文档引用的原始问题行号均以该版本为准**；状态于 2026-09-27 按 commit `d3a0b45` 复核；2026-10-11 二次复核，更新行数统计与失效路径，当前实现行号不再沿用基线行号。
 - 目的：找出文档内的重复步骤，判断哪些部分适合拆分为独立 skill、哪些适合收敛为 hook
 
 ## 状态总览
@@ -23,12 +23,12 @@
 
 行数变化：
 
-| 文件 | 基线 `06a32b0` | 当前 |
-| --- | --- | --- |
-| `git-commit/SKILL.md` | 299 | 274 |
-| `git-rules/SKILL.md` | 270 | 343 |
+| 文件 | 基线 `06a32b0` | 复核时 `d3a0b45`（2026-09-27） | 现行（2026-10-11 读取） |
+| --- | --- | --- | --- |
+| `git-commit/SKILL.md` | 299 | 274 | 222 |
+| `git-rules/SKILL.md` | 270 | 343 | 350 |
 
-`git-rules` 当前比基线增加 73 行，主要来自版本校准协议、按规则分派的 `ask_mode`、映射文件校验和更完整的分支契约。此前“净减 9 行”的统计只适用于 2026-09-21 的中间状态，现已失效。
+`git-rules` 复核时比基线增加 73 行，主要来自版本校准协议、按规则分派的 `ask_mode`、映射文件校验和更完整的分支契约。此前“净减 9 行”的统计只适用于 2026-09-21 的中间状态，现已失效。行数仅作体量参考，不构成契约——后续改动会再次改变该值。
 
 ---
 
@@ -73,7 +73,7 @@
 
 **原建议**：以 JSON 为准，SKILL.md 改为引用 `labels`。
 
-**实际处理**：方向相反——**以 SKILL.md 的文案为准**，更新了 JSON 的 `labels`，SKILL.md 删除硬编码表改为从 `rules["git-commit"].pre_check_mode.labels` 读取。理由是 SKILL.md 那套文案是专为 AskUserQuestion 写的，比 JSON 里的更具体（「检查仅警告」比「警告但继续」更清楚地说明动作）。两份副本的问题由「引用而非复制」解决，与选哪份为准无关。
+**实际处理**：方向相反——**以 SKILL.md 的文案为准**，更新了 JSON 的 `labels`，SKILL.md 删除硬编码表——询问的选项与映射由 git-rules 按规则读取 `references/ask/git-commit/pre_check_mode.md` 提供（git-commit 正文从不读取 `labels` 字段，JSON 的 labels 仅作元数据同步）。理由是 SKILL.md 那套文案是专为 AskUserQuestion 写的，比 JSON 里的更具体（「检查仅警告」比「警告但继续」更清楚地说明动作）。两份副本的问题由「引用而非复制」解决，与选哪份为准无关。
 
 ### 5. "询问 → 是否保存 → set → 重算"模式重复四次
 
@@ -132,17 +132,19 @@ v0.2.0 已采用 `references/ask/{scope}/{key}.md`，但只外置每条规则的
 | `/git-message` | `SKILL.md:140-187`（`Step 3`） | ~48 行 | git-amend / squash / PR 描述生成 |
 | `/git-context` | `SKILL.md:16-25`（`Step 1a`） | ~10 行 | 所有 git skill 的前置检查 |
 
-`/git-sync` 是基线 `SKILL.md:256` 自己记录的 TODO（是否改为调用专用 `/git-fetch`）。那行已删除——当时它引用的 `scratch/remote-repository-policy.md` 尚不存在，且该行本身是开发期旁白而非执行指令。该文件目前已作为独立设计记录纳入仓库，但不再被 skill 运行时引用。
+`/git-sync` 是基线 `SKILL.md:256` 自己记录的 TODO（是否改为调用专用 `/git-fetch`）。那行已删除——当时它引用的 `scratch/remote-repository-policy.md`（基线时的平铺路径，该文件现位于 `scratch/notes/`）尚不存在，且该行本身是开发期旁白而非执行指令。该文件目前已作为独立设计记录纳入仓库，但不再被 skill 运行时引用。
+
+**0.4.0 注意（2026-10-11）**：`/git-sync` 名字已被发布流水线的回流技能占用——语义为「基准分支 merge 回工作分支 + 推送」，见 `scratch/designs/release-flow-generic-skills-design.md`。本表格中的 `/git-sync` 抽取候选（git-commit Step 5 远程同步的复用抽取）若实施，需另取名或先与回流技能做合并评估，不得直接使用该名字。
 
 `/git-precheck` 的额外理由：它的输入输出契约干净（暂存集合 → 问题列表），且正则表与提交流程的变更理由不同。
 
 ### 已实施的 schema 原地压缩
 
-`git-rules` 的 canonical schema 原本是一份 78 行的 pretty-printed JSON。其中绝大部分体积来自重复结构：每条规则的 `options` 各占一行、每个标签再各占一行。换成「一个通用骨架 + 一张六行的规则表」后减少 46 行，**且不新增任何文件**。
+`git-rules` 的 canonical schema 原本是一份约 75 行的 pretty-printed JSON。其中绝大部分体积来自重复结构：每条规则的 `options` 各占一行、每个标签再各占一行。换成「一个通用骨架 + 一张六行的规则表」后缩减约 40 行，**且不新增任何文件**。
 
 骨架部分特意保留字面形式不压缩——模型要据此写出精确的 JSON，可照抄比省几行重要。
 
-**当前状态补充**：这项 schema 表格压缩仍然保留，但它不再是“外置”的替代方案；v0.2.0 同时采用了 schema 原地压缩和询问定义外置。由于新增校准及询问契约，`git-rules/SKILL.md` 的总行数已增至 343 行。
+**当前状态补充**：这项 schema 表格压缩仍然保留，但它不再是“外置”的替代方案；v0.2.0 同时采用了 schema 原地压缩和询问定义外置。由于新增校准及询问契约，`git-rules/SKILL.md` 的总行数在复核时为 343 行，2026-10-11 实测 350 行（详见上文行数变化表；行数随后续改动持续变化，仅作体量参考）。
 
 ---
 
@@ -201,11 +203,11 @@ v0.2.0 已采用 `references/ask/{scope}/{key}.md`，但只外置每条规则的
 
 ## 五、其他发现的问题
 
-1. **死引用**（已解决）：基线中的 `SKILL.md:256` 曾引用当时不存在的 `scratch/remote-repository-policy.md`，执行指令中的该引用已删除。该文件目前已经存在，但只是独立的设计记录，不再是 skill 运行时依赖。
+1. **死引用**（已解决）：基线中的 `SKILL.md:256` 曾引用当时不存在的 `scratch/remote-repository-policy.md`（基线时的平铺路径，现位于 `scratch/notes/`），执行指令中的该引用已删除。该文件目前已经存在，但只是独立的设计记录，不再是 skill 运行时依赖。
 2. **拼写错误**（已解决）：`SKILL.md:78` 的 `AskUserQuesion` 已随标签表删除。
 3. **attribution 规则张力**（未处理）：`SKILL.md:206` 要求"不要把你自己添加到作者或合作者一栏"，而 Claude Code 的默认 attribution 指引要求在 commit 末尾添加 `Co-Authored-By: Claude Code`。`Co-Authored-By` 与"作者栏"严格说不是同一回事，但两条规则存在冲突解读空间，建议写清究竟禁止哪一种。
 4. **交互点未统一**（部分处理）：`Step 3a` 以 `$ARGUMENTS` 非空作为分支条件，`Step 5b` 又在 `unconfigured` 时插入询问，全流程没有交互入口清单。已在 `git-rules` 侧补上 AskUserQuestion 的适用约束，`git-commit` 侧未动。
-5. **多 remote 超出选项上限**（待决策）：`SKILL.md:216` 的"多个可用 remote 时询问用户"没有数量上限，而 AskUserQuestion 单个问题最多 4 个选项。选项：(a) 最多列 4 个、其余让用户口述；(b) 改为打印 remote 列表让用户输入名称。
+5. **多 remote 超出选项上限**（待决策）：`SKILL.md:228`（基线；现行 `SKILL.md:185`）的"多个可用 remote 时询问用户"没有数量上限，而 AskUserQuestion 单个问题最多 4 个选项。选项：(a) 最多列 4 个、其余让用户口述；(b) 改为打印 remote 列表让用户输入名称。
 
 ### 一条来自实践的教训
 
