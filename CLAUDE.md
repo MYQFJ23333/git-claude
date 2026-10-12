@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指令构成（无源码、无依赖、无构建、无测试、无 CI）。README 标注本项目处于极早期版本，配置格式和目录结构可能变化。
 
-四个 skill 位于 `.claude/skills/`，在本仓库会话中可直接调用：
+五个 skill 位于 `.claude/skills/`，在本仓库会话中可直接调用：
 
 | skill | 分工 |
 | --- | --- |
@@ -14,12 +14,13 @@ git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指�
 | `/git-rules` | 规则配置中心：show / set / reset / init / repair / calibrate / ask / export / import |
 | `/git-commit` | 六步提交流程：环境与规则 → 暂存分析 → message → 提交 → 远程同步 → 报告 |
 | `/git-push` | 五步推送流程：环境与规则 → 解析目标 → 分叉检测 → 执行推送 → 报告 |
+| `/git-extract` | 六步搬移流程：环境与规则 → 解析参数 → 分类推断 → 建分支应用 → 委托提交 → 报告 |
 
 ## 常用命令
 
 没有 build / lint / test 命令。开发方式是直接编辑 `.claude/` 下的文件，验证方式：
 
-- 实际调用 skill 走流程：`/git-help`、`/git-rules show`、`/git-commit`、`/git-push`
+- 实际调用 skill 走流程：`/git-help`、`/git-rules show`、`/git-commit`、`/git-push`、`/git-extract`
 - 改动 SKILL.md 后做只读审查：`/review-skill <SKILL.md 路径> [相关文件...]`（用户级 skill，位于 `~/.claude/skills/review-skill`），例如 `/review-skill .claude/skills/git-commit/SKILL.md .claude/git-claude-rules.json`
 - 改动规则或协议后用 `/git-rules show` 核对实际配置；技能运行时的 repair / calibrate / set 会改写 `.claude/git-claude-rules.json`，属于正常变更，按双轨分支约定随 `workspace-sync` 提交即可
 
@@ -74,7 +75,7 @@ git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指�
 - git-rules SKILL.md 中的规则表（scope / key / 默认值 / options / 控制值 / ask_mode / description）是 init、repair、calibrate、import 的**唯一规范来源**。修改规则模型时以该表为准，不从配置文件反推。
 - 控制值（`unconfigured`、`prompt`）只触发询问，不是本次动作：不得作为 ask 的候选项或 `effective_action` 返回。`prompt` 可用 set 写回以恢复“每次询问”，`unconfigured` 只能由 init / reset / repair / calibrate 写入。
 - ask_mode 三种：`initialize`（2–4 选项，必须写回）、`inline_persistence`（恰好 4 选项，一次表达动作+是否持久化）、`separate_persistence`（两问：动作 + 仅本次/始终使用）。ask 返回 `status / effective_action / persisted / stored_value`，调用方只消费这些字段，不复制候选项、展开映射或写回逻辑。
-- 其他 skill 写规则只能内部调用 set，**不直接改 JSON**；不为 git-push 新增作用域（现有 scope 只有 `project` 和 `git-commit`）。
+- 其他 skill 写规则只能内部调用 set，**不直接改 JSON**；不为 git-push 新增作用域（现有 scope 为 `project`、`git-commit`、`git-extract`、`git-release`）。
 - 单个 AskUserQuestion 问题最多 4 个选项。
 
 ### 远程策略继承

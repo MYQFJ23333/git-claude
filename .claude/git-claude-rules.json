@@ -1,7 +1,7 @@
 {
-  "version": "0.3.1",
+  "version": "0.4.0",
   "created_at": "2026-09-27",
-  "updated_at": "2026-09-27",
+  "updated_at": "2026-10-13",
   "rules": {
     "project": {
       "repository_relation_mode": {
@@ -86,6 +86,60 @@
         },
         "description": "提交前的预检行为（大文件检测、敏感文件名检查、敏感信息扫描等）",
         "set_at": "2026-09-27"
+      }
+    },
+    "git-release": {
+      "prerelease_mode": {
+        "value": "prompt",
+        "options": [
+          "prompt",
+          "prerelease",
+          "stable"
+        ],
+        "labels": {
+          "prompt": "每次询问",
+          "prerelease": "标记为预发布",
+          "stable": "正式发布"
+        },
+        "description": "创建 GitHub Release 时的 prerelease 属性",
+        "set_at": "2026-10-13"
+      }
+    },
+    "git-extract": {
+      "selection_mode": {
+        "value": "unconfigured",
+        "options": [
+          "auto",
+          "manual",
+          "confirm"
+        ],
+        "labels": {
+          "auto": "自动推断",
+          "manual": "仅按参数",
+          "confirm": "展示并确认"
+        },
+        "description": "路径选择模式（三类分类与 .gitignore 推断）",
+        "set_at": "2026-10-13"
+      },
+      "new_files_mode": {
+        "value": "prompt",
+        "options": [
+          "prompt",
+          "all",
+          "none"
+        ],
+        "labels": {
+          "prompt": "每次询问",
+          "all": "全添加",
+          "none": "全不添加"
+        },
+        "description": "C 类非忽略新文件的处理策略",
+        "set_at": "2026-10-13"
+      },
+      "extra_excludes": {
+        "value": "",
+        "description": "持久排除清单（逗号分隔 pathspec，运行时解析，任何模式均参与）",
+        "set_at": "2026-10-13"
       }
     }
   }
