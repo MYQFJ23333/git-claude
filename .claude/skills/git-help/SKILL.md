@@ -47,6 +47,7 @@ Skill registry 是本 skill 唯一的数据来源，只列出本仓库实际存�
 | git-commit | /git-commit [message] | 分析暂存内容，按项目规则生成或校验 commit message，执行提交前安全预检，并按远程协作策略处理提交后的同步 |
 | git-push | /git-push [--remote REMOTE] [--branch BRANCH] | 解析目标远程与分支，更新远程状态并预警分叉，按远程协作策略执行推送并自动设置 upstream，仅提供 force-with-lease 安全强推 |
 | git-rules | /git-rules <命令> | 管理项目级规则配置 .claude/git-claude-rules.json，支持 show、set、reset、init、repair、calibrate、ask、export、import |
+| git-extract | /git-extract [--base BRANCH] [--from BRANCH] [--name BRANCH] [--message MSG] [INCLUDE_PATHSPEC...] [--exclude PATHSPEC...] | 从基准分支拉出目标分支，按三类分类与 .gitignore 推断选择性搬移另一分支的更改并原子应用补丁，委托 git-commit 提交，用于发布准备排除本地私有文件 |
 
 维护规则：
 
@@ -104,7 +105,7 @@ repo-root 通过 git rev-parse --show-toplevel 取得；该命令失败（当前
 #### 分析问题
 
 1. 从参数中提取用户的目标和已知条件：涉及的对象（提交、暂存区、分支、远程仓库、规则配置）、当前状态、期望结果；
-2. 判断问题类别：提交与暂存、提交前预检、远程同步、规则配置、其他；
+2. 判断问题类别：提交与暂存、提交前预检、远程同步、发布准备、规则配置、其他；
 3. 只把 Skill registry 中的技能作为可选方案来源；
 4. 用户描述过于模糊、无法判断问题类别（例如只有 “git 出问题了”）时：只输出待确认信息和 2 到 4 条只读的现状获取命令，然后结束本分支，不给出推荐流程。
 
