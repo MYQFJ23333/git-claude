@@ -1,33 +1,3 @@
-# Dependencies
-node_modules/
-__pycache__/
-*.pyc
-.venv/
-venv/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-
-# Environment
-.env
-.env.local
-
-# 本地文件
 .claude/standards/commit-message-format.md
 .claude/git-claude-rules.json
 scratch/
-
-# Codex（本地移植实验，不纳入版本控制）
-.agents/
-.Codex/
-.codex/
