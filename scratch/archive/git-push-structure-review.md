@@ -6,6 +6,8 @@
 
 本报告只记录本轮未修改的结构建议。detached HEAD 路径无法闭合的问题已在目标文件中修复，不列入待办。
 
+**2026-10-21 修复记录：下列 4 条历史待办已全部修复**（连同子代理全量复审发现的 W-1 退出码缺口、W-2「仅 --remote 无 upstream」路径、W-3 出口词汇、W-4 managed_safe_sync 双重定义一并处理；W-4 按方案甲落地：git-commit Step 5c 改为委托 /git-push，git-push 新增「委托契约」节，git-commit 的 `@{u}` 退出码表述统一为 128）。修复摘要：Step 2 重排为 2a 语法 / 2b 状态读取 / 2c 目标解析与统一校验并建立统一上下文字段表；Step 3b fetch 后记录 EXPECTED_REMOTE_OID，强推改用 `--force-with-lease=refs/heads/BRANCH:EXPECTED_REMOTE_OID`；Step 4c 非快进与 stale lease 均返回整个 Step 3 并要求重新确认；错误处理原则定义「终止任务 / 结束远程阶段」双出口词汇。**剩余待办（批次 4，均为 INFO）见文末「2026-10-21 遗留 INFO」一节。**
+
 2026-10-11 对照现行 SKILL.md 复核：下列 4 条建议**均未实施**——校验顺序未调整（2a 仍引用 2b 才读取的 `git remote` 结果）、强推仍为不带 OID 的 `--force-with-lease`、非快进失败仍只返回 Step 3b、仍未建立统一推送上下文——全部继续有效。
 
 ## WARNING：参数校验早于依赖状态读取
@@ -62,3 +64,17 @@ PUSH_MODE = normal | force-with-lease
 ```
 
 这可以减少条件重复，并让首推、普通推送、detached HEAD 和强推路径更容易独立验证。
+
+## 2026-10-21 遗留 INFO（批次 4 待办，复审子代理的 I 群未修项）
+
+**以下 7 条已于 2026-10-21 批次 4 全部修复**，记录保留为处置档案：
+
+1. 首推计数口径：Step 3a 第 2 项改为「提交总数 + 本次新增数」双指标，新增数用 `git rev-list --count LOCAL_REF --not --remotes`。
+2. upstream 覆盖语义：Step 5 报告新增「本次目标与现有 upstream 不一致时明确说明未更改跟踪关系」。
+3. `--set-upstream` 适用范围：Step 4a 声明常规与强推路径均适用。
+4. 操作状态检测：Step 1a 第 4 项指定 `git rev-parse --git-path NAME` 后判文件存在性。
+5. 询问交互形式：Step 2c 第 2 项写明 remote 选项化、branch 口述 +「使用当前分支名」快捷项。
+6. `branch.BRANCH` 措辞：git-push Step 2b 第 3 项与 git-commit Step 5b 第 4 项统一为 `branch.CURRENT_BRANCH.*`，git-commit 5b 第 2 项补 CURRENT_BRANCH 记录。
+7. git-rules delegate remote write 行精确化：委托方可为选择分支读取/缓存 repository_relation_mode，但不复算远程写入安全判定。
+
+新审查发现的 WARNING 群（W-1 退出码、W-2 仅 --remote 无 upstream、W-3 出口词汇、W-4 双重定义）已随本次修复处理；stale lease 归类（原 I-5）已并入 Step 4c 第 3 项。**本审查单至此全部闭环（2026-10-21）。**

@@ -69,7 +69,20 @@ git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指�
 3. `.claude/skills/git-rules/references/ask/{scope}/{key}.md` — 每条 `ask_mode != none` 的规则一份询问映射（问题、选项、effective_action、stored_value）。路径中的 scope/key 用 canonical 原值。
 4. `.claude/standards/` — `staged-content-checks.md` 是预检标准（pre_check_mode 为 warn/block 时必须完整读取，缺失即停止提交）；`commit-message-format.md` 是 `custom` 消息风格的规范来源。
 
+### 跨技能协议块（blocks/）
+
+`.claude/skills/git-rules/references/blocks/` 存放跨技能共享的可执行协议块。当前唯一块 `task-init.md`（任务初始化：git 环境与操作状态检查 + 配置快照；配置协议定义权威仍在 git-rules SKILL.md 的 Configuration snapshot and recovery 节）。通用「执行与跳过」机制由 task-init 块单点保管：后续新增块只写自身执行内容，跳过语义按其通用机制执行，不各自复制该节。
+
+编写与引用约定（写给技能编写者，不进块文件）：
+
+- 任务流技能（git-commit、git-push 及未来的任务流/原语技能）在 Step 1 调用 task-init 并声明所需 value JSON Pointer 清单（可为空，为空时块只做版本与配置健康检查）；git-help（只读导览，不碰仓库状态）与 git-rules（协议定义权威，正文内嵌）豁免；
+- 引用方只写一行调用 + value 清单 + 自身特有语义，不复制块内文字；引用行必须声明「块文件缺失、为空或不可读时终止任务，不自动创建或猜测块内容」；
+- 技能特有语义（如 git-push 的「工作区更改不阻止推送」）留在技能内，不并入块；
+- 新增协议块时更新本节列举；被委托技能经块内跳过规则自动去重，调用方无需附加声明。
+
 ### 配置快照协议（所有 skill 任务开始时）
+
+执行细则单点定义于 `.claude/skills/git-rules/references/blocks/task-init.md`（见上一节）；引用该块的技能按块内规则执行并声明所需 value 清单。
 
 1. 各读一次 VERSION 和配置文件，只比较配置 `version` 与 VERSION，不扫描规则清单。
 2. 版本一致：只缓存本任务实际用到的 value，**不读取 git-rules/SKILL.md**。
@@ -82,7 +95,7 @@ git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指�
 - git-rules SKILL.md 中的规则表（scope / key / 默认值 / options / 控制值 / ask_mode / description）是 init、repair、calibrate、import 的**唯一规范来源**。修改规则模型时以该表为准，不从配置文件反推。
 - 控制值（`unconfigured`、`prompt`）只触发询问，不是本次动作：不得作为 ask 的候选项或 `effective_action` 返回。`prompt` 可用 set 写回以恢复“每次询问”，`unconfigured` 只能由 init / reset / repair / calibrate 写入。
 - ask_mode 三种：`initialize`（2–4 选项，必须写回）、`inline_persistence`（恰好 4 选项，一次表达动作+是否持久化）、`separate_persistence`（两问：动作 + 仅本次/始终使用）。ask 返回 `status / effective_action / persisted / stored_value`，调用方只消费这些字段，不复制候选项、展开映射或写回逻辑。
-- 其他 skill 写规则只能内部调用 set，**不直接改 JSON**；不为 git-push 新增作用域（现有 scope 为 `project`、`git-commit`、`git-release`）。
+- 其他 skill 写规则只能内部调用 set，**不直接改 JSON**；不为 git-push 新增作用域（现有 scope 为 `project`、`git-commit`）。
 - 单个 AskUserQuestion 问题最多 4 个选项。
 
 ### 远程策略继承

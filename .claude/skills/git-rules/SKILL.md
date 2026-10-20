@@ -104,7 +104,6 @@ Shared data model、Policy inheritance 或 Call contract 中。
 | git-commit | commit_message_mode | unconfigured | conventional_simple=简单 Conventional、conventional_full=完整 Conventional、custom=自定义 | unconfigured | initialize | commit message 风格 |
 | git-commit | post_commit_push_mode | prompt | prompt=询问、always=总是、never=从不 | prompt | inline_persistence | independent_repositories 模式下 commit 成功后的 push 行为 |
 | git-commit | pre_check_mode | prompt | prompt=每次询问、disabled=不检查、warn=检查仅警告、block=检查并阻止 | prompt | separate_persistence | 提交前的预检行为（大文件检测、敏感文件名检查、敏感信息扫描等） |
-| git-release | prerelease_mode | prompt | prompt=每次询问、prerelease=标记为预发布、stable=正式发布 | prompt | inline_persistence | 创建 GitHub Release 时的 prerelease 属性 |
 
 新增 ask_mode 不是 none 的规则时，必须同时创建 `references/ask/{scope}/{key}.md`；该文件只定义这一条规则的问题、选项和映射。主 SKILL.md 不收录具体询问文案或逐项映射，也不建立需要同步维护的手工路由表。
 
@@ -128,8 +127,7 @@ repository_relation_mode 是远程协作策略的上层控制项：
 
 新技能与远程写入的归属声明：
 
-- 远程分支写入（含 git-pr 与 git-sync 的推送）一律经 `/git-push` 解析有效策略，新技能不持有自有远程字段；
-- `git-release` 的 tag 推送不受 repository_relation_mode 管辖（无 upstream / 分叉语义），安全判定为无条件规则：远端同名 tag 即停、永不 force。
+- 远程分支写入（含 git-pr 与 git-sync 的推送）一律经 `/git-push` 解析有效策略，新技能不持有自有远程字段。
 
 large_file_size_limit 接受正数加 B、KB、MB 或 GB，单位不区分大小写，按 1024 进位计算。默认值为 1MB。
 
@@ -344,7 +342,7 @@ repair 是配置修复分支，不是所有命令的必经步骤。
 - resolve remote policy：读取 repository_relation_mode，并计算本次有效远程策略；
 - local-only skill：不涉及远程操作时，不必解析远程策略；
 - remote-aware skill：执行远程操作前必须遵循有效远程策略。
-- delegate remote write：委托 `/git-push` 执行远程写入即视为遵循有效远程策略，委托方不自行缓存 repository_relation_mode。
+- delegate remote write：委托 `/git-push` 执行远程写入即视为遵循有效远程策略；委托方可为选择分支读取或缓存 repository_relation_mode（如决定是否委托），但不复算远程写入安全判定。
 
 除 ask 返回专用的结构化选择结果外，内部调用只返回成功或失败状态，不把初始化、修复和策略继承过程展示给用户。
 

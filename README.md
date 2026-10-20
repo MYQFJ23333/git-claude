@@ -29,7 +29,7 @@
 │   │   ├── git-commit/              # 智能提交工作流
 │   │   ├── git-help/                # 只读帮助与技能导览
 │   │   ├── git-push/                # 安全推送工作流
-│   │   └── git-rules/               # 规则管理、询问映射与 VERSION
+│   │   └── git-rules/               # 规则管理、协议块、询问映射与 VERSION
 │   └── standards/
 │       └── staged-content-checks.md # 项目级暂存内容检查标准
 ├── .gitignore
@@ -40,8 +40,8 @@
 ## 规则与标准
 
 - `.claude/skills/git-rules/VERSION` 是 Git Skills 使用的唯一基准版本文件。
-- 需要配置的技能会在任务开始时一次性读取 `VERSION` 和 `.claude/git-claude-rules.json`，版本一致时只缓存本次任务需要的配置值，不预先扫描或校验完整规则清单。
-- 配置缺失、损坏或版本不一致时，相关技能会按需调用 `/git-rules repair` 或 `/git-rules calibrate`。
+- 任务流技能在开始时执行 `.claude/skills/git-rules/references/blocks/task-init.md` 初始化块（git 环境与操作状态检查、配置快照）：版本一致时只缓存本次任务需要的配置值，不预先扫描或校验完整规则清单；同一任务内的委托链不会重复执行该块。
+- 配置缺失、损坏或版本不一致时，初始化块会按需调用 `/git-rules repair` 或 `/git-rules calibrate`。
 - 暂存内容检查标准统一存放在 `.claude/standards/staged-content-checks.md`；自定义 commit message 格式可写入本地的 `.claude/standards/commit-message-format.md`。
 
 ## 基本使用

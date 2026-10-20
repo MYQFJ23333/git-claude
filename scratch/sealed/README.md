@@ -57,3 +57,39 @@
 6. 全套一致性核对（registry ↔ 目录、CLAUDE.md / README / canonical 表交叉），按 `/review-skill` 复查。
 
 **关联记录**：`designs/release-flow-generic-skills-design.md` 的四技能链与阶段划分仍有效（阶段 2 已实施后封存，启封属该方案的后续实施）；`designs/git-extract-design.md` 为启封时的设计基准；`notes/git-extract-scope-analysis.md` 为定位分析来源。
+
+### git-release（封存日期：2026-10-21）
+
+**封存原因**：技能本体从未实施——0.4.0-beta.1 仅落地 canonical 规则行与 ask 映射，正式面长期处于「有规则无技能」的半成品状态。其形态同样依赖未来基础技能：tag 推送安全（设计中 C 技能的 Step 3-4）预计由未来 git-tag 原语吸收、prerelease 规则随迁（见 `designs/release-flow-generic-skills-design.md` 技能分层表）。为与 git-extract 的封存决策一致（原语技能完成前不对已知要重构的语义做增量维护），将规则配套一并封存，待原语技能完成后随四技能链一并实施或启封。
+
+**备份内容（按项目相对路径，启封时拷回）**：
+
+| 备份路径 | 来源 |
+| --- | --- |
+| `.claude/skills/git-rules/references/ask/git-release/prerelease_mode.md` | ask 映射（inline_persistence） |
+| `rules.git-release` scope | 配置范围——完整快照见本目录 git-extract 条目的 `.claude/git-claude-rules.json`（其中含 git-release scope），启封时从中提取或经 `/git-rules init` 按 canonical 表恢复 |
+
+**正式面移除片段（启封时恢复，原文如下）**：
+
+1. `.claude/skills/git-rules/SKILL.md` canonical 规则表行（表尾）：
+
+   ```text
+   | git-release | prerelease_mode | prompt | prompt=每次询问、prerelease=标记为预发布、stable=正式发布 | prompt | inline_persistence | 创建 GitHub Release 时的 prerelease 属性 |
+   ```
+
+2. `.claude/skills/git-rules/SKILL.md` Policy inheritance 归属声明第二条：
+
+   ```text
+   - `git-release` 的 tag 推送不受 repository_relation_mode 管辖（无 upstream / 分叉语义），安全判定为无条件规则：远端同名 tag 即停、永不 force。
+   ```
+
+3. 配置文件 `rules.git-release` scope（从 git-extract 快照恢复，或经 `/git-rules init` 与 canonical 表恢复后对齐）。
+
+**启封清单**：
+
+1. 将 ask 映射拷回 `.claude/skills/git-rules/references/ask/git-release/`；
+2. 恢复 canonical 表行与 Policy inheritance 归属声明；
+3. 恢复配置中的 git-release scope，`/git-rules show` 核对；
+4. 与 git-release 技能本体实施合并进行（设计基准见 `designs/release-flow-generic-skills-design.md` C 节）；实施时复核 tag 推送安全判定的归属——若 git-tag 原语先行，按吸收分析归位到原语层。
+
+**关联记录**：`designs/release-flow-generic-skills-design.md` 四技能链仍有效（C=git-release 技能本体待实施，本次仅封存其规则配套）；与 git-extract 封存同属「原语技能完成前不做增量维护」决策（git-extract 2026-10-20，git-release 2026-10-21）。
