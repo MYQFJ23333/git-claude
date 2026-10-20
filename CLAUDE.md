@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指令构成（无源码、无依赖、无构建、无测试、无 CI）。README 标注本项目处于极早期版本，配置格式和目录结构可能变化。
+git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指令构成（无源码、无依赖、无构建、无测试、无 CI）。受众是所有同时使用 Git 与 Claude Code 的人。README 标注本项目处于极早期版本，配置格式和目录结构可能变化。
 
-五个 skill 位于 `.claude/skills/`，在本仓库会话中可直接调用：
+四个 skill 位于 `.claude/skills/`，在本仓库会话中可直接调用：
 
 | skill | 分工 |
 | --- | --- |
@@ -14,13 +14,12 @@ git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指�
 | `/git-rules` | 规则配置中心：show / set / reset / init / repair / calibrate / ask / export / import |
 | `/git-commit` | 六步提交流程：环境与规则 → 暂存分析 → message → 提交 → 远程同步 → 报告 |
 | `/git-push` | 五步推送流程：环境与规则 → 解析目标 → 分叉检测 → 执行推送 → 报告 |
-| `/git-extract` | 六步搬移流程：环境与规则 → 解析参数 → 分类推断 → 建分支应用 → 委托提交 → 报告 |
 
 ## 常用命令
 
 没有 build / lint / test 命令。开发方式是直接编辑 `.claude/` 下的文件，验证方式：
 
-- 实际调用 skill 走流程：`/git-help`、`/git-rules show`、`/git-commit`、`/git-push`、`/git-extract`
+- 实际调用 skill 走流程：`/git-help`、`/git-rules show`、`/git-commit`、`/git-push`
 - 改动 SKILL.md 后做只读审查：`/review-skill <SKILL.md 路径> [相关文件...]`（用户级 skill，位于 `~/.claude/skills/review-skill`），例如 `/review-skill .claude/skills/git-commit/SKILL.md .claude/git-claude-rules.json`
 - 改动规则或协议后用 `/git-rules show` 核对实际配置；技能运行时的 repair / calibrate / set 会改写 `.claude/git-claude-rules.json`，属于正常变更，按双轨分支约定随 `workspace-sync` 提交即可
 
@@ -51,6 +50,14 @@ git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指�
 
 - commit message 使用完整 Conventional Commits 结构，但不使用 scope（见 `.claude/standards/commit-message-format.md`）。
 
+### 技能准入标准
+
+适用于本库全部技能（既有技能的改造评估与新增技能的立项均须检验）：
+
+- 每个技能必须满足其一，否则不应存在于本库：**普遍性**（即「通用」，含义见会话纠错一节）或**不可或缺性**（无法通过其他基础技能组合得到）。
+- 「基础技能」包括：平替 Git 内同名指令的技能，以及流程简单、无法再分的自定义技能。
+- 判断不可或缺性时，将基础技能与现有技能视为可自由编排的原子步骤：若某技能的全部作用可由它们组合复现，该技能即不满足标准，应改造或淘汰。
+
 ## 架构
 
 ### 配置体系（跨文件关系）
@@ -62,7 +69,20 @@ git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指�
 3. `.claude/skills/git-rules/references/ask/{scope}/{key}.md` — 每条 `ask_mode != none` 的规则一份询问映射（问题、选项、effective_action、stored_value）。路径中的 scope/key 用 canonical 原值。
 4. `.claude/standards/` — `staged-content-checks.md` 是预检标准（pre_check_mode 为 warn/block 时必须完整读取，缺失即停止提交）；`commit-message-format.md` 是 `custom` 消息风格的规范来源。
 
+### 跨技能协议块（blocks/）
+
+`.claude/skills/git-rules/references/blocks/` 存放跨技能共享的可执行协议块。当前唯一块 `task-init.md`（任务初始化：git 环境与操作状态检查 + 配置快照；配置协议定义权威仍在 git-rules SKILL.md 的 Configuration snapshot and recovery 节）。通用「执行与跳过」机制由 task-init 块单点保管：后续新增块只写自身执行内容，跳过语义按其通用机制执行，不各自复制该节。
+
+编写与引用约定（写给技能编写者，不进块文件）：
+
+- 任务流技能（git-commit、git-push 及未来的任务流/原语技能）在 Step 1 调用 task-init 并声明所需 value JSON Pointer 清单（可为空，为空时块只做版本与配置健康检查）；git-help（只读导览，不碰仓库状态）与 git-rules（协议定义权威，正文内嵌）豁免；
+- 引用方只写一行调用 + value 清单 + 自身特有语义，不复制块内文字；引用行必须声明「块文件缺失、为空或不可读时终止任务，不自动创建或猜测块内容」；
+- 技能特有语义（如 git-push 的「工作区更改不阻止推送」）留在技能内，不并入块；
+- 新增协议块时更新本节列举；被委托技能经块内跳过规则自动去重，调用方无需附加声明。
+
 ### 配置快照协议（所有 skill 任务开始时）
+
+执行细则单点定义于 `.claude/skills/git-rules/references/blocks/task-init.md`（见上一节）；引用该块的技能按块内规则执行并声明所需 value 清单。
 
 1. 各读一次 VERSION 和配置文件，只比较配置 `version` 与 VERSION，不扫描规则清单。
 2. 版本一致：只缓存本任务实际用到的 value，**不读取 git-rules/SKILL.md**。
@@ -75,7 +95,7 @@ git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指�
 - git-rules SKILL.md 中的规则表（scope / key / 默认值 / options / 控制值 / ask_mode / description）是 init、repair、calibrate、import 的**唯一规范来源**。修改规则模型时以该表为准，不从配置文件反推。
 - 控制值（`unconfigured`、`prompt`）只触发询问，不是本次动作：不得作为 ask 的候选项或 `effective_action` 返回。`prompt` 可用 set 写回以恢复“每次询问”，`unconfigured` 只能由 init / reset / repair / calibrate 写入。
 - ask_mode 三种：`initialize`（2–4 选项，必须写回）、`inline_persistence`（恰好 4 选项，一次表达动作+是否持久化）、`separate_persistence`（两问：动作 + 仅本次/始终使用）。ask 返回 `status / effective_action / persisted / stored_value`，调用方只消费这些字段，不复制候选项、展开映射或写回逻辑。
-- 其他 skill 写规则只能内部调用 set，**不直接改 JSON**；不为 git-push 新增作用域（现有 scope 为 `project`、`git-commit`、`git-extract`、`git-release`）。
+- 其他 skill 写规则只能内部调用 set，**不直接改 JSON**；不为 git-push 新增作用域（现有 scope 为 `project`、`git-commit`）。
 - 单个 AskUserQuestion 问题最多 4 个选项。
 
 ### 远程策略继承
@@ -115,3 +135,4 @@ git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指�
 
 - **误解「通用」的含义**：错误在于把「对大部分项目通用」理解为技能需要兼容无 git-rules 的环境并设计降级分支。正确理解：「通用」指每个技能都足够抽象，可应用于采用不同 Git 管理方案的项目，用于简化甚至自动化该项目的 Git 管理流程。做法：技能设计一律假设套装（git-rules + 全部技能）完整安装，不设计无配置降级路径；目标项目之间的差异由技能参数与 git-rules 规则吸收。
 - **写入非项目路径**：错误在于把计划、草稿等过程产物写到项目目录之外的路径。正确做法：过程产物一律写入本仓库 `scratch/`（草稿箱）；除非用户明确要求，禁止创建、修改或删除项目目录之外的文件（**尤其是 C:/Users/13199/.claude 等全局路径**）。
+- **主动维护版本号**：错误在于把迭代 VERSION patch 号当作修改 skill 内容后的自动义务。正确理解：版本号由用户维护，无需 Claude Code 维护。做法：除非用户明确要求，不修改 `.claude/skills/git-rules/VERSION`，也不为内容变更主动迭代版本号；「版本规则」一节仅作项目背景知识，不构成 Claude 的操作指令。
