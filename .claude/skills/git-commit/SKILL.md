@@ -13,36 +13,14 @@ license: MIT
 
 所有命令都必须检查退出码。命令失败时立即停止当前阶段，不把空输出当作成功。
 
-### Step 1a: Git 仓库和操作状态
+执行 `.claude/skills/git-rules/references/blocks/task-init.md`——初始化步骤（git 环境与操作状态检查、配置快照）与「本任务已执行则跳过」规则均在块内。块文件缺失、为空或不可读时终止任务，不自动创建或猜测块内容。块检查失败或存在冲突、未完成 Git 操作时终止任务。本技能所需 value 清单：
 
-1. 执行 git rev-parse --show-toplevel，取得仓库根目录；失败时提示原因并终止。
-2. 后续 Git 命令从仓库根目录执行。
-3. 执行 git status --short --branch，记录当前分支和工作区状态。
-4. 检查以下特殊状态：
-   - git diff --cached --name-only --diff-filter=U 是否有未解决的暂存冲突；
-   - MERGE_HEAD、CHERRY_PICK_HEAD、REVERT_HEAD、REBASE_HEAD 是否存在；
-   - git status 是否报告 merge、rebase、cherry-pick 或 revert 正在进行。
-5. 如果存在冲突或未完成 Git 操作，停止普通提交流程，报告状态和文件，不自动 continue、abort、reset 或 rebase。
-
-### Step 1b: 项目规则一次性读取
-
-1. 读取 `.claude/skills/git-rules/VERSION`，只接受单行 `MAJOR.MINOR.PATCH`；文件缺失、不可读、为空或格式非法时停止，不从其他文件猜测基准版本。
-2. 读取 `.claude/git-claude-rules.json` 一次并解析 JSON：
-   - 文件不可读时停止，不覆盖；
-   - 文件不存在或 JSON 无法解析时，内部调用 `/git-rules repair --internal`，成功后只重新读取一次，失败或仍不可用时停止。
-3. 比较配置 version 与 VERSION：
-   - 相等时继续；
-   - 不相等、缺失或格式非法时，内部调用 `/git-rules calibrate --internal`，成功后只重新读取一次；配置版本高于基准、校准失败或重读后仍不一致时停止。
-4. 版本一致后一次性缓存以下 value；缺失值也按缺失状态缓存，本步骤不校验或修复它们：
-
-   - `/rules/git-commit/empty_staging_mode/value`；
-   - `/rules/git-commit/pre_check_mode/value`；
-   - `/rules/project/large_file_size_limit/value`；
-   - `/rules/git-commit/commit_message_mode/value`；
-   - `/rules/project/repository_relation_mode/value`；
-   - `/rules/git-commit/post_commit_push_mode/value`。
-
-版本一致的正常路径不读取 `git-rules/SKILL.md`，也不检查完整规则清单、规则元数据或各 value。每个 value 只在流程实际使用时验证；目标 scope、key 或 value 缺失、类型错误或非法时，内部调用 `/git-rules repair SCOPE KEY --internal`，成功后只重新读取一次，失败或仍不可用时停止。任何 `/git-rules ask` 或其他配置写入成功后都丢弃旧快照，并一次性重新读取 VERSION、配置 version 和后续所需 value；不得静默使用内存默认值。
+- `/rules/git-commit/empty_staging_mode/value`；
+- `/rules/git-commit/pre_check_mode/value`；
+- `/rules/project/large_file_size_limit/value`；
+- `/rules/git-commit/commit_message_mode/value`；
+- `/rules/project/repository_relation_mode/value`；
+- `/rules/git-commit/post_commit_push_mode/value`。
 
 所有 /git-rules ask 调用都必须先检查返回的 status：selected 时才使用 effective_action；cancelled 时终止当前任务；error 时报告规则询问或写回失败并终止，不得继续执行依赖该选择的动作。
 
@@ -58,7 +36,7 @@ license: MIT
    - abort：报告暂存区为空并终止。
 4. git add 失败时停止，保留已有暂存状态，报告原始错误。
 5. 暂存操作完成后重新执行 git diff --cached --name-status -z，显示实际暂存文件清单。内部创建的规则配置属于项目文件；如果用户选择暂存全部，它会按实际状态进入暂存清单。
-6. 重新检查暂存清单是否为空；为空时终止。冲突状态已在 Step 1a 检查并终止，此处不再复查。
+6. 重新检查暂存清单是否为空；为空时终止。冲突状态已在 Step 1 的初始化块中检查并终止，此处不再复查。
 7. 执行 git diff --name-only -z 和 git ls-files --others --exclude-standard -z，判断暂存区之外是否还存在未暂存或未跟踪更改；命令失败时停止当前阶段。
 8. 暂存区非空且同时存在未暂存或未跟踪更改时，使用 AskUserQuestion 询问用户本次提交的范围。询问前必须提示用户：当前暂存区内容已确认，但询问期间仍然可以继续修改暂存区，最终提交范围以确认后的最新暂存状态为准。选项：
    - 提交全部更改：执行 git add --all -- .，把工作区更改一并纳入本次提交；
@@ -159,7 +137,7 @@ custom 标准文件缺失、为空或无法读取时停止，并提示需要配�
 
 ### Step 5a: 选择有效远程策略
 
-进入远程阶段时从 Step 1b 的快照取得并验证 repository_relation_mode。值为 unconfigured 时，先向用户说明两种模式的含义，再调用 /git-rules ask project repository_relation_mode；该初始化型询问只显示两种实际模式并必须写回，调用方按 effective_action 重新计算有效策略：
+进入远程阶段时从 Step 1 建立的配置快照取得并验证 repository_relation_mode。值为 unconfigured 时，先向用户说明两种模式的含义，再调用 /git-rules ask project repository_relation_mode；该初始化型询问只显示两种实际模式并必须写回，调用方按 effective_action 重新计算有效策略：
 
 - 视为独立仓库：本地和远程分别处理，遵守 post_commit_push_mode；
 - 视为同一仓库：将远程视为本地仓库协作的一部分，由统一 managed_safe_sync 策略自动处理远程事项。
@@ -171,39 +149,35 @@ effective policy：
   - prompt：调用 /git-rules ask git-commit post_commit_push_mode；询问选项和写回映射由 git-rules 按需读取。effective_action 为 push 时继续解析远程上下文；为 skip 时不读取远程状态，明确报告尚未同步并进入 Step 6；
   - always：继续解析远程上下文；
   - never：不读取远程状态，明确报告尚未同步并进入 Step 6。
-- same_repository：使用 Step 5c 定义的 managed_safe_sync 流程。本次 post_commit_push_mode 的存储值保留，但被该策略覆盖，不参与本次行为。
+- same_repository：按统一 managed_safe_sync 策略处理，远程写入委托 Step 5c 调用 /git-push 执行。本次 post_commit_push_mode 的存储值保留，但被该策略覆盖，不参与本次行为。
 
 ### Step 5b: 解析远程上下文
 
-1. 执行 git remote，命令失败时报告错误并结束远程阶段；输出为空时报告未配置远程仓库并进入 Step 6。
-2. 执行 git branch --show-current：
-   - 为空表示 detached HEAD；报告本地 commit 成功，跳过自动远程操作；
-   - 非空时继续。
-3. 执行 git rev-parse --abbrev-ref --symbolic-full-name '@{u}'；退出码为 1 表示没有 upstream，其他失败必须报告。存在 upstream 时，再通过当前分支的 branch.BRANCH.remote 和 branch.BRANCH.merge 配置取得明确的 remote 和 branch，并执行 git remote get-url --push REMOTE 检查对应 push URL；push URL 缺失或命令失败时停止远程阶段。
-4. 有 upstream 时使用 upstream 的 remote 和 branch。
-5. 没有 upstream 时：
-   - same_repository：若只有一个可用 remote 且存在 push URL，使用当前分支名作为远程分支候选，并按 Step 5c 自动设置 upstream；多个可用 remote 时询问用户，用户取消则停止远程阶段；没有可用 remote 时跳过远程阶段；
-   - independent_repositories：不猜测目标；报告缺少 upstream 并停止自动 push。
-6. 所有后续 fetch 和 push 都必须使用明确的 remote、branch 和 refspec。
-7. independent_repositories 使用明确的 git push REMOTE HEAD:BRANCH 执行已在 Step 5a 决定的推送，失败时停止；same_repository 进入 Step 5c。
+1. 执行 git remote 并检查退出码；命令失败时报告原始错误并结束远程阶段；输出为空时报告未配置远程仓库并进入 Step 6。
+2. 执行 git branch --show-current 并检查退出码；命令失败时报告原始错误并结束远程阶段；退出码 0 且输出为空表示 detached HEAD，报告本地 commit 成功、未执行远程操作，进入 Step 6；退出码 0 且非空时记录 CURRENT_BRANCH。
+3. same_repository：目标解析与安全判定不在本 skill 内完成，进入 Step 5c 委托执行。
+4. independent_repositories：
+   - 执行 git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 并检查退出码；退出码非 0 且错误信息为 "no upstream configured"（该场景实际退出码为 128）表示没有 upstream，不视为命令失败；其他失败必须报告并结束远程阶段，不得把未知错误当作无 upstream；
+   - 存在 upstream 时，通过 branch.CURRENT_BRANCH.remote 和 branch.CURRENT_BRANCH.merge 取得明确的 remote 和 branch，进入 Step 5c 委托执行；
+   - 没有 upstream 时：不猜测目标，报告缺少 upstream 并跳过自动推送，进入 Step 6。
+5. 所有远程写入都使用明确的 remote、branch 和 refspec；本 skill 不在委托之外自行执行 fetch 或 push。
 
-### Step 5c: same_repository 的安全同步
+### Step 5c: 委托 /git-push 执行远程写入
 
-1. 使用 git ls-remote --heads REMOTE refs/heads/BRANCH 确认远程分支是否存在；退出码 0 且输出为空表示分支不存在，其他失败停止远程阶段。
-2. 如果远程分支不存在，使用明确的 git push --set-upstream REMOTE HEAD:BRANCH 创建跟踪关系；这适用于当前分支发布到唯一可用 remote。
-3. 如果远程分支存在，执行 git fetch REMOTE refs/heads/BRANCH:refs/remotes/REMOTE/BRANCH；失败时停止 push 并报告原始错误。
-4. 使用 git rev-parse REMOTE/BRANCH 取得远端提交，使用 git merge-base --is-ancestor REMOTE/BRANCH HEAD 验证远端提交是否为本地 HEAD 的祖先，并使用 git rev-list --count REMOTE/BRANCH..HEAD 取得本地领先提交数。git merge-base --is-ancestor 返回 0 表示祖先关系成立，返回 1 表示不成立，其他退出码表示比较失败。
-5. 仅当以下条件同时满足才允许自动 push：
-   - 远端提交是本地 HEAD 的祖先，不存在远端独有提交；
-   - REMOTE/BRANCH..HEAD 的提交数大于 0；
-   - 比较命令全部成功。
-6. 条件满足时执行明确的 git push REMOTE HEAD:BRANCH；无 upstream 时使用 --set-upstream。允许一次推送一个或多个本地领先提交。
-7. 祖先关系不成立或本地领先提交数不大于 0 时，使用 git rev-list --left-right --count REMOTE/BRANCH...HEAD 取得 ahead/behind 数量，停止自动远程写入，报告本地分支、远程分支、本地 HEAD、远端提交及数量。
-8. fetch、比较或 push 任一命令失败时停止远程阶段；本地 commit 保留。push 期间远端再次变化导致失败时，不自动重试，重新报告远程状态。
+1. 本 skill 不自行执行任何远程写入：fetch、ls-remote、分叉检测、push 与 upstream 设置一律委托 /git-push 完成，本文件不复制 managed_safe_sync 的判定逻辑（唯一定义在 git-push）。
+2. 调用方式：
+   - same_repository：调用 /git-push 不带参数，目标由 git-push 按其 Step 2 规则解析（有 upstream 时沿用，无 upstream 时按其单 remote 默认或询问确定）；
+   - independent_repositories：调用 /git-push --remote REMOTE --branch BRANCH，目标来自 Step 5b 已解析的 upstream；
+   git-push 流程内的目标确认与安全确认在其内部完成，本 skill 不代替其询问：自动策略（post_commit_push_mode=always、managed_safe_sync）的含义是自动启动推送流程，首推确认与分叉询问不因委托而豁免。
+3. 结果处理：
+   - 推送成功：进入 Step 6；
+   - git-push 结束远程阶段（用户取消、目标无法确定、远端分叉放弃或错误）：本地 commit 保留，按其报告如实转述放弃或失败原因，进入 Step 6；
+   - /git-push 不可用或委托调用本身失败：报告原始错误并结束远程阶段，本地 commit 保留。
+4. 委托执行即视为遵循有效远程策略（git-rules Call contract 的 delegate remote write），本 skill 不复算远程写入安全判定。
 
 ## Step 6: 提交后报告
 
-根据最新 git status 和远程结果报告：
+根据最新 git status 和远程结果（same_repository 下为 /git-push 的报告转述）报告：
 
 - 本地 commit 是否成功；
 - 是否已同步；
