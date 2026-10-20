@@ -1,18 +1,16 @@
 ---
 name: git-extract
-description: 选择性搬移 - 从基准分支拉出目标分支，按三类分类与 .gitignore 推断选择性搬移另一分支的更改并原子应用补丁，委托 git-commit 提交，用于发布准备排除本地私有文件
-argument-hint: "[--base BRANCH] [--from BRANCH] [--name BRANCH] [--message MSG] [INCLUDE_PATHSPEC...] [--exclude PATHSPEC...]"
+description: 选择性搬移 - 从基准分支拉出目标分支，按三类分类与 .gitignore 推断选择性搬移另一分支的更改并原子应用补丁，委托 git-commit 提交；主用于发布准备排除本地私有文件，亦支持跨分支按路径选择性移植
+argument-hint: "[--base BRANCH] [--from BRANCH] [--name BRANCH] [--message MESSAGE] [--include PATHSPEC...] [--exclude PATHSPEC...]"
 license: MIT
 ---
 
 # git-extract
 
-选择性搬移助手。从基准分支拉出目标分支，把另一分支的更改按路径选择性搬移进来并原子应用补丁，委托 git-commit 完成提交。主用例是发布准备：将工作分支上的可发布更改移入 `release/vX.Y.Z`，排除本地私有文件。
+选择性搬移助手。从基准分支拉出目标分支，把另一分支的更改按路径选择性搬移进来并原子应用补丁，委托 git-commit 完成提交。主用例是发布准备：将工作分支上的可发布更改移入 `release/vX.Y.Z`，排除本地私有文件。次要用法是跨分支按路径选择性移植（如从 feature 分支挑文件进 hotfix、把混杂分支按路径拆成多个独立 PR、把在错误分支上做的工作整体搬走）。非发布场景下 `.gitignore` 信号与 B 类「判私有」的先验未必成立，建议改用 manual 模式或显式 `--include` / `--exclude` 收窄选择集——优先级矩阵保证显式 `--include` 可推翻一切启发式与闸结论。
 
 - 做：建目标分支、分类与推断选择集、原子应用补丁、委托提交；
 - 不做：merge / cherry-pick（不建立祖先关系）、推送、创建 PR、暂存分析 / 预检 / 消息规则（全部委托）。
-
-本技能是**搬移**（diff/apply，两分支间无祖先关系），不是合并（建立祖先关系、全量包含）；v1 不提供 `--mode commits`——下游 PR 为 squash 合并，提交粒度会被抹平。
 
 所有命令都必须检查退出码。命令失败时立即停止当前阶段，不把空输出当作成功。
 
@@ -25,7 +23,7 @@ license: MIT
 3. 执行 `git status --short --branch`，记录当前分支和工作区状态。
 4. 检查 MERGE_HEAD、CHERRY_PICK_HEAD、REVERT_HEAD、REBASE_HEAD 是否存在，以及 git status 是否报告 merge、rebase、cherry-pick 或 revert 正在进行。
 5. 存在未完成 Git 操作时停止，报告状态和文件，不自动 continue、abort、reset 或 rebase。
-6. **差异（与 git-push 模板不同）**：本技能涉及 checkout + apply，工作区存在已跟踪文件的未提交更改时立即停止，提示先提交或自行 stash，不自动执行任何一种；未跟踪文件不拦截——与补丁目标路径冲突时在 Step 4 apply 如实失败。
+6. 工作区存在已跟踪文件的未提交更改时立即停止，提示先提交或自行 stash，不自动执行任何一种；未跟踪文件不拦截——与补丁目标路径冲突时在 Step 4 apply 如实失败。
 
 ### Step 1b: 项目规则一次性读取
 
@@ -36,7 +34,7 @@ license: MIT
 3. 比较配置 version 与 VERSION：
    - 相等时继续；
    - 不相等、缺失或格式非法时，内部调用 `/git-rules calibrate --internal`，成功后只重新读取一次；配置版本高于基准、校准失败或重读后仍不一致时停止。
-4. 版本一致后缓存以下三个 JSON Pointer 指向的值（**差异**：本技能只缓存自身三规则，不缓存其他 scope）：
+4. 版本一致后缓存以下三个 JSON Pointer 指向的值：
    - `/rules/git-extract/selection_mode/value`
    - `/rules/git-extract/new_files_mode/value`
    - `/rules/git-extract/extra_excludes/value`
@@ -44,9 +42,7 @@ license: MIT
 
 版本一致的正常路径不读取 `git-rules/SKILL.md`，也不检查完整规则清单、规则元数据或其他 value。value 只在流程实际使用时验证（`selection_mode` 在 Step 2，`new_files_mode` 与 `extra_excludes` 在 Step 3）；目标规则缺失或 value 非法时，内部调用 `/git-rules repair git-extract KEY --internal`，成功后只重新读取一次，失败或仍不可用时停止。任何 `/git-rules ask` 或其他配置写入成功后都丢弃旧快照，并一次性重新读取 VERSION、配置 version 和三个 value。不得静默使用内存默认值，写规则只能内部调用 set，不直接改 JSON。
 
-配置基准版本（决定校准）与被发布物版本（release 分支名中的版本号）不同源，本技能不读取被发布物版本——目标分支名由 `--name` 提供。
-
-本技能不涉及远程写入，不解析 `repository_relation_mode`。所有 `/git-rules ask` 调用只传 SCOPE/KEY 并检查返回的 status：selected 时才使用 effective_action；cancelled 时终止任务；error 时报告询问或写回失败并终止，不得继续执行依赖该选择的动作。
+不解析 `repository_relation_mode`。所有 `/git-rules ask` 调用只传 SCOPE/KEY 并检查返回的 status：selected 时才使用 effective_action；cancelled 时终止任务；error 时报告询问或写回失败并终止，不得继续执行依赖该选择的动作。
 
 ## Step 2: 解析参数与引用
 
@@ -54,20 +50,19 @@ license: MIT
 
 ### Step 2a: 参数解析
 
-参数格式为 `[--base BRANCH] [--from BRANCH] [--name BRANCH] [--message MSG] [INCLUDE_PATHSPEC...] [--exclude PATHSPEC...]`：
+参数格式为 `[--base BRANCH] [--from BRANCH] [--name BRANCH] [--message MESSAGE] [--include PATHSPEC...] [--exclude PATHSPEC...]`：
 
 - `--base` / `--from` / `--name` / `--message` 为单值选项，各自最多出现一次且必须紧跟一个非空值；
-- `--exclude` 可重复出现，每项一个 pathspec；
-- 位置参数均为 INCLUDE pathspec，可多个、可省略（完备性检查见 Step 2b 第 2 条）；
-- 出现未知选项、pathspec 之外的多余位置参数、重复的单值选项或缺少值时，报告用法并停止，不猜测用户意图；
+- `--include` / `--exclude` 可重复出现，每项一个 pathspec；`--include` 可多个、可省略（完备性检查见 Step 2b 第 2 条）；
+- 出现未知选项、任何位置参数、重复的单值选项或缺少值时，报告用法并停止，不猜测用户意图；
 - `--message` 省略时不生成，交由 git-commit 按其规则决定。
 
-INCLUDE 与 `--exclude` 同为 git pathspec 语法，不做预校验，diff 阶段失败时如实报告。
+`--include` 与 `--exclude` 同为 git pathspec 语法，不做预校验，diff 阶段失败时如实报告。
 
 ### Step 2b: 消费 selection_mode 并确定引用
 
 1. **消费 `selection_mode`**：从快照读取，只接受 auto / manual / confirm；值为 `unconfigured` 时调用 `/git-rules ask git-extract selection_mode`（initialize），selected → 以 effective_action 作为本次模式，cancelled / error → 终止；value 缺失或非法 → `repair git-extract selection_mode --internal` 后按协议重读。ask 成功后按 Step 1b 协议丢弃旧快照并一次性重读。
-2. **pathspec 完备性检查仅 manual 模式执行**：INCLUDE 与 `--exclude` 合计为零 → 报告并停止，提示改用 auto / confirm 模式或给出 pathspec；auto / confirm 模式零 pathspec 合法（全自动推断）。
+2. **pathspec 完备性检查仅 manual 模式执行**：`--include` 与 `--exclude` 合计为零 → 报告并停止，提示改用 auto / confirm 模式或给出 pathspec；auto / confirm 模式零 pathspec 合法（全自动推断）。
 3. **base 缺省 → 默认分支探测**（失败 → 询问，不猜）：执行 `git remote` 取得可用 remote，对每个 remote 执行 `git symbolic-ref --quiet --short refs/remotes/REMOTE/HEAD`，取第一个成功结果作为 BASE；无 remote 或全部失败 → 列出候选分支询问 base（候选超过 4 个时打印完整列表让用户口述），不猜测 main / master，取消询问 → 终止。
 4. **from 缺省 → 当前分支**：执行 `git branch --show-current`；为空表示 detached HEAD，此时必须显式给 `--from`，否则报告原因并停止。
 5. **`--name` 缺省 → 询问目标分支名**；取消询问或未给出 → 终止。
@@ -77,15 +72,15 @@ INCLUDE 与 `--exclude` 同为 git pathspec 语法，不做预校验，diff 阶�
 ## Step 3: 分类与推断，合成选择集
 
 1. 执行 `git merge-base BASE FROM` 取得分叉点；取 `git diff --name-only BASE...FROM` 路径清单，按「选择逻辑协议 · 三类文件模型」分类。命令失败即停止。
-2. **先行分离**路径名为 `.gitignore` 的变更（任意层级、含修改与删除）——移出分类输入、暂存待询（见协议「.gitignore 自身变更闸」），不进入后续推断。
-3. manual 模式：跳过推断，移动集 / 排除集仅由显式参数决定，仍展示分类供参考；auto / confirm 模式：对剩余路径执行协议「auto / confirm 推断流程」（base 无 `.gitignore` 时信号贡献为空，三类分类照做）。
+2. **先行分离**路径名为 `.gitignore` 的变更（任意层级、含修改与删除）——移出分类输入、暂存待询（见第 6 条），不进入后续推断。
+3. manual 模式：跳过推断，移动集 / 排除集由显式参数与 `.gitignore` 闸结论（第 6 条）决定，仍展示分类供参考；auto / confirm 模式：对剩余路径执行协议「auto / confirm 推断流程」（base 无 `.gitignore` 时信号贡献为空，三类分类照做）。
 4. **读取并解析 `extra_excludes`**：逗号分隔字符串 → pathspec 数组，空串 = 空清单；解析失败即停止并报告原字符串。任何模式均参与排除（见优先级矩阵）。
 5. **延迟消费 `new_files_mode`**：仅当 auto / confirm 存在「非忽略 C 类文件待定」时读取并验证（只接受 prompt / all / none）：
    - `all` → 剩余 C 类全部进入移动集，不询问；
    - `none` → 剩余 C 类全部排除，不询问；
    - `prompt` → 展示 C 类清单后调用 `/git-rules ask git-extract new_files_mode`，selected → 按 effective_action 决定本次全部添加或全部排除（persisted / stored_value 由 ask 处理，不复制写回逻辑），cancelled / error → 终止；ask 成功后按协议重读快照；
    - manual 模式不消费本规则。
-6. **`.gitignore` 暂存集询问**：非空时展示差异摘要，一次 AskUserQuestion 批量询问（全部转移 / 全不转移 / 取消终止；仅本次、不写回，属流程内交互而非规则询问）；结论直接并入移动集或排除集，该路径不再进入 gitignore 信号、持久清单或三策略；取消 → 终止。
+6. **`.gitignore` 暂存集询问**（各模式均适用）：非空时展示差异摘要，一次 AskUserQuestion 批量询问（全部转移 / 全不转移 / 取消终止；仅本次、不写回，属流程内交互而非规则询问）；结论并入移动集或排除集，与显式参数冲突时服从优先级矩阵，该路径不再进入 gitignore 信号、持久清单或三策略；取消 → 终止。
 7. 按「优先级矩阵」合成最终 INCLUDE / EXCLUDE，执行 `git diff --binary BASE...FROM -- …` 输出到补丁文件（`git rev-parse --git-path git-extract.patch`，落在 git 目录、不产生未跟踪文件）：
    - pathspec 以进程参数数组传递，`:(exclude)` 为独立参数，不进 shell 字符串；
    - INCLUDE / EXCLUDE 均为空时不传 pathspec（取全部三点变更）；
@@ -110,7 +105,7 @@ INCLUDE 与 `--exclude` 同为 git pathspec 语法，不做预校验，diff 阶�
 - 分支名、基准（BASE）、来源（FROM）、新提交哈希；
 - 转移文件数与清单（超 20 条截断报总数）；排除统计按 B 类 / gitignore 信号 / 持久清单 / 显式参数分列；
 - C 类策略与本次选择（含 `new_files_mode` 是否被消费、`.gitignore` 闸结论）；
-- 提交是否已被 git-commit 顺带推送——same_repository 模式下 git-commit 可能把目标分支顺带推上远端（其既有行为），本技能不加开关，如实报告；
+- 提交是否已被 git-commit 顺带推送——same_repository 模式下 git-commit 可能把目标分支顺带推上远端，如实报告；
 - 建议下一步：创建 PR 并 squash 合并到基准分支（`/git-pr` 落地后可直接使用，当前阶段可手动创建）。
 
 ## 选择逻辑协议
@@ -125,7 +120,7 @@ INCLUDE 与 `--exclude` 同为 git pathspec 语法，不做预校验，diff 阶�
 | **B 类｜分叉前有、base 已删** | merge-base 有、base 现无、from 侧有变更 | **判私有，排除**（判定基准 = merge-base） |
 | **C 类｜此次完全新增** | merge-base 无、base 无、from 有 | 依次过两道过滤（base `.gitignore`、持久清单），剩余交三策略 |
 
-判定方法：用 `git ls-tree -r --name-only` 分别取 BASE、merge-base、FROM 的文件清单做集合运算，不对单条路径逐个查询。三点 diff 天然偏向该模型：B 类中 from 侧未改动的文件、A 类中 from 侧未改动的文件都不会出现在 diff 中——进 diff 的都是 from 侧真实动过的路径，无需额外处理。
+判定方法：用 `git ls-tree -r --name-only` 分别取 BASE、merge-base、FROM 的文件清单做集合运算，不对单条路径逐个查询。
 
 ### auto / confirm 推断流程
 
@@ -136,13 +131,13 @@ INCLUDE 与 `--exclude` 同为 git pathspec 语法，不做预校验，diff 阶�
 5. 仍剩余的 C 类 → 交三策略；
 6. 按优先级矩阵合成最终 INCLUDE / EXCLUDE。
 
-判定「被 base 忽略」必须基于 base 树中的 `.gitignore`（各层级）而非当前工作区；可用临时 worktree checkout BASE 后执行 `git check-ignore`，用完清理。无法判定时按「未忽略」处理——不误排除，交后续流程。base 无 `.gitignore` 时信号贡献为空：三类分类照做、C 类直接过清单与三策略，不存在独立回退分支。gitignore 信号只作用于 C 类：A 类已被 base 跟踪（gitignore 对已跟踪文件无意义）、B 类已判私有。
+判定「被 base 忽略」必须基于 base 树中的 `.gitignore`（各层级）而非当前工作区；可用临时 worktree checkout BASE 后执行 `git check-ignore`，用完清理。无法判定时按「未忽略」处理。base 无 `.gitignore` 时信号贡献为空：三类分类照做、C 类直接过清单与三策略。gitignore 信号只作用于 C 类。
 
 ### C 类三策略（new_files_mode）
 
 | 值 | 语义 |
 | --- | --- |
-| `prompt`（默认 + 控制值） | 每次选择——展示 C 类清单后经规则询问决定本次动作；需要部分选择时取消本次，改用显式 INCLUDE / EXCLUDE 重跑 |
+| `prompt`（默认 + 控制值） | 每次选择——展示 C 类清单后经规则询问决定本次动作；需要部分选择时取消本次，改用显式 `--include` / `--exclude` 重跑 |
 | `all` | 全添加——剩余 C 类全部进入移动集 |
 | `none` | 全不添加——剩余 C 类全部排除 |
 
@@ -150,22 +145,9 @@ INCLUDE 与 `--exclude` 同为 git pathspec 语法，不做预校验，diff 阶�
 
 ### 优先级矩阵
 
-1. **显式 `INCLUDE` 覆盖一切自动推断**——gitignore 信号、B 类判私有、持久清单均可被显式包含推翻（参数是显式意图，推断是启发式）；
-2. **显式 `--exclude` 与 `INCLUDE` 同路径 → 排除优先**（沿用 git pathspec 语义，不报错）；
-3. **`extra_excludes` 不受 selection_mode 门控**——任何模式下都参与排除；与显式 INCLUDE 同路径时服从第 1 条（本次参数覆盖持久配置）。
-
-### .gitignore 自身变更闸
-
-路径名为 `.gitignore` 的变更（任意层级、含修改与删除）是知识源文件本身，不走常规推断：Step 3 第 2 步先行分离，第 6 步展示差异摘要后批量一次 AskUserQuestion（全部转移 / 全不转移 / 取消终止；仅本次、不写回），结论直接并入移动集或排除集——该路径不再进入 gitignore 信号、持久清单或三策略，避免重复询问与推断覆盖。
-
-### 核心机制（diff + apply 要点）
-
-- `BASE...FROM`（三点）只含 from 侧改动；两点 diff 会把 base 侧新改动反向还原，**不能用**。
-- `:(exclude)` 是 pathspec magic，作为独立参数传递（参数数组，不进 shell 字符串）；同路径冲突与覆盖语义统一见优先级矩阵。
-- `--binary` 覆盖二进制文件；diff 默认开启重命名检测，apply 可应用。
-- `--index` 同时写暂存区——成功即 git-commit 可直接处理。
-- 排除路径根本不进补丁（零泄漏）；全有或全无，失败即停。
-- 不采用 merge 后还原排除路径（排除内容先进入历史，事后 revert 消不掉，违反「排除本地私有文件」初衷）；cherry-pick 序列留待未来 `--mode commits`。
+1. **显式 `--include` 覆盖一切自动推断与闸结论**——gitignore 信号、B 类判私有、持久清单、`.gitignore` 闸结论均可被显式包含推翻；
+2. **显式 `--exclude` 与 `--include` 或闸「全部转移」同路径 → 排除优先**（沿用 git pathspec 语义，不报错）；
+3. **`extra_excludes` 不受 selection_mode 门控**——任何模式下都参与排除；与显式 `--include` 同路径时服从第 1 条。
 
 ## 错误处理原则
 
@@ -186,4 +168,4 @@ INCLUDE 与 `--exclude` 同为 git pathspec 语法，不做预校验，diff 阶�
 | `git apply` 失败 | 停止，保留分支与现场，报告清理方式（不自动回滚） |
 | git-commit 委托取消或失败 | 停止，报告「分支已建、补丁在暂存区」 |
 
-其余：认证、权限、网络、hook 错误原样报告，不自动重试；本技能不涉及强推与远程写入，永不执行裸 `--force`、自动 continue / abort / reset。全局安全不变量见根 CLAUDE.md「安全不变量」。
+其余：认证、权限、网络、hook 错误原样报告，不自动重试。全局安全不变量见根 CLAUDE.md「安全不变量」。

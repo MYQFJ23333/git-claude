@@ -11,7 +11,6 @@
 - **`/git-rules`**：管理 `.claude/git-claude-rules.json` 中的项目级规则，支持查看、设置、重置、初始化、修复、校准、导入和导出。
 - **`/git-commit`**：分析暂存内容，生成或校验提交信息，按配置执行提交前检查，并在策略允许时处理远程同步。
 - **`/git-push`**：解析目标远程与分支，更新远程状态并预警分叉，按远程协作策略安全推送并自动设置 upstream；需要强推时仅使用 `--force-with-lease`。
-- **`/git-extract`**：从基准分支拉出目标分支，按路径选择性搬移另一分支的更改并原子应用补丁，委托 `/git-commit` 提交，用于发布准备等场景排除本地私有文件。
 
 目前的可配置行为包括：
 
@@ -19,8 +18,7 @@
 - commit message 的格式；
 - 大文件、敏感文件名和敏感信息的提交前检查；
 - 本地仓库与远程仓库的协作关系；
-- 提交完成后的推送策略；
-- 路径选择模式、新增文件的处理策略与持久排除清单（`/git-extract`）。
+- 提交完成后的推送策略。
 
 ## 目录结构
 
@@ -29,7 +27,6 @@
 ├── .claude/
 │   ├── skills/
 │   │   ├── git-commit/              # 智能提交工作流
-│   │   ├── git-extract/             # 选择性搬移与发布准备工作流
 │   │   ├── git-help/                # 只读帮助与技能导览
 │   │   ├── git-push/                # 安全推送工作流
 │   │   └── git-rules/               # 规则管理、询问映射与 VERSION
@@ -59,10 +56,9 @@
 /git-commit
 /git-push
 /git-push --remote origin --branch main
-/git-extract --name release/vX.Y.Z
 ```
 
-也可以向 `/git-commit` 传入提交信息，通过 `--remote`、`--branch` 明确指定 `/git-push` 的推送目标，或通过 `--base`、`--from`、`--name` 指定 `/git-extract` 的搬移基准、来源与目标分支；具体参数和行为请使用 `/git-help <技能名>` 查看。首次使用或配置不完整时，相关技能会按需初始化、修复、校准或询问项目规则。
+也可以向 `/git-commit` 传入提交信息，通过 `--remote`、`--branch` 明确指定 `/git-push` 的推送目标；具体参数和行为请使用 `/git-help <技能名>` 查看。首次使用或配置不完整时，相关技能会按需初始化、修复、校准或询问项目规则。
 
 ## 使用前须知
 

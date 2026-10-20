@@ -105,9 +105,6 @@ Shared data model、Policy inheritance 或 Call contract 中。
 | git-commit | post_commit_push_mode | prompt | prompt=询问、always=总是、never=从不 | prompt | inline_persistence | independent_repositories 模式下 commit 成功后的 push 行为 |
 | git-commit | pre_check_mode | prompt | prompt=每次询问、disabled=不检查、warn=检查仅警告、block=检查并阻止 | prompt | separate_persistence | 提交前的预检行为（大文件检测、敏感文件名检查、敏感信息扫描等） |
 | git-release | prerelease_mode | prompt | prompt=每次询问、prerelease=标记为预发布、stable=正式发布 | prompt | inline_persistence | 创建 GitHub Release 时的 prerelease 属性 |
-| git-extract | selection_mode | unconfigured | auto=自动推断、manual=仅按参数、confirm=展示并确认 | unconfigured | initialize | 路径选择模式（三类分类与 .gitignore 推断） |
-| git-extract | new_files_mode | prompt | prompt=每次询问、all=全添加、none=全不添加 | prompt | inline_persistence | C 类非忽略新文件的处理策略 |
-| git-extract | extra_excludes | "" | 无 | 无 | none | 持久排除清单（逗号分隔 pathspec，运行时解析，任何模式均参与） |
 
 新增 ask_mode 不是 none 的规则时，必须同时创建 `references/ask/{scope}/{key}.md`；该文件只定义这一条规则的问题、选项和映射。主 SKILL.md 不收录具体询问文案或逐项映射，也不建立需要同步维护的手工路由表。
 
@@ -132,8 +129,7 @@ repository_relation_mode 是远程协作策略的上层控制项：
 新技能与远程写入的归属声明：
 
 - 远程分支写入（含 git-pr 与 git-sync 的推送）一律经 `/git-push` 解析有效策略，新技能不持有自有远程字段；
-- `git-release` 的 tag 推送不受 repository_relation_mode 管辖（无 upstream / 分叉语义），安全判定为无条件规则：远端同名 tag 即停、永不 force；
-- `git-extract` 的三规则（selection_mode、new_files_mode、extra_excludes）为本地路径选择语义，同样不受 repository_relation_mode 管辖。
+- `git-release` 的 tag 推送不受 repository_relation_mode 管辖（无 upstream / 分叉语义），安全判定为无条件规则：远端同名 tag 即停、永不 force。
 
 large_file_size_limit 接受正数加 B、KB、MB 或 GB，单位不区分大小写，按 1024 进位计算。默认值为 1MB。
 

@@ -10,7 +10,7 @@
 | 展示选项 | 选项说明 | effective_action | stored_value |
 | --- | --- | --- | --- |
 | 自动推断 | 按三类分类与 base .gitignore 自动推断选择集 | auto | auto |
-| 仅按参数 | 只使用显式 INCLUDE 与 --exclude 参数，不做推断 | manual | manual |
+| 仅按参数 | 只使用显式 --include 与 --exclude 参数，不做推断 | manual | manual |
 | 展示并确认 | 推断后展示完整分类与结果，经确认后执行 | confirm | confirm |
 
 选择后必须写回 stored_value。不得显示或返回 unconfigured。
