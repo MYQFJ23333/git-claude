@@ -9,6 +9,7 @@
 | `designs/git-skills-design.md` | 设计蓝图 | 蓝图（部分过时） | 项目初期愿景清单；头部有现状对照（已实现 / 0.4.0 计划中技能），「规则存储系统」「Skill 兼容性设计」两章已标注过时仅供历史参考 |
 | `designs/release-flow-generic-skills-design.md` | 设计方案 | 已定稿，阶段 2 已实施后封存 | 发布流程抽象为 git-extract / git-pr / git-release / git-sync 四个通用技能（套装 0.4.0）；含共享语义单一定义表与技能分层/演化吸收分析；git-extract 已实施后封存（2026-10-20，见 `sealed/`）、git-release 规则配套已封存（2026-10-21，见 `sealed/`，技能本体未实施），git-pr、git-sync 待实施 |
 | `designs/git-extract-design.md` | 设计方案 | 已实施后封存（待启封修订） | 技能 A 的具体设计：参数接口、选择逻辑（三类分类 / .gitignore 推断 / 优先级矩阵 / 三规则）、6 步流程、diff+apply 机制选型、委托边界与失败出口；曾于 0.4.0-beta.1 实施，2026-10-20 封存，启封时以此为设计基准 |
+| `designs/git-fetch-design.md` | 设计方案 | 已定稿待实施 | 原语层 fetch 技能：双模式 refspec（默认仅快进，`--force` 强制）、prune 挂钩 `repository_relation_mode`（same_repository 自动）、返回契约供委托方消费；本期不改造 git-push 仅预留契约，回应 `notes/remote-repository-policy.md` 五项评估（2026-10-23 定稿） |
 | `reviews/git-commit-skill-review.md` | 审查记录 | 已复核（2026-10-11 二次更新） | git-commit / git-rules 结构与抽取分析；行数统计、失效路径已修正，含未实施待办（hooks、技能抽取） |
 | `archive/git-push-structure-review.md` | 审查记录 | 已归档（2026-10-21 全单闭环） | git-push 结构审查（2026-09-28）：4 条历史待办、复审 WARNING 群与 7 条 INFO 已全部修复并经批次 1–4 落地，处置档案完整保留；detached HEAD 问题更早已修复不列入 |
 | `notes/remote-repository-policy.md` | 待处理便签 | 部分已落地 | 原则部分已实现（指向 git-rules Policy inheritance），余 fetch/pull 自动化边界与 `/git-fetch` 设想待处理 |
