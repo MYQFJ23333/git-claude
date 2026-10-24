@@ -9,11 +9,14 @@
 - `same_repository` 下仅一个可用 remote 且无 upstream 时自动设置并继续安全同步；多个 remote 时询问用户（git-push 已落实单问题 4 选项上限，git-commit 侧仍待决策，见 `scratch/reviews/git-commit-skill-review.md` 五 · 5）；
 - 字段继承关系与覆盖优先级已定型：子字段原始配置值保留，策略切换后恢复。
 
-**仍开放**：fetch、pull 的自动化边界尚未统一设计（push 已完整实现，见上述权威定义）。
+**仍开放**：pull 的自动化边界尚未统一设计；fetch 原语已实施（见下节），但各 skill 内部委托切换未完成（push 已完整实现，见上述权威定义）。
 
-## 待处理：内部 fetch 的调用方式
+## 已落地：内部 fetch 的调用方式（2026-10-25）
 
-- 待确认：各 skill 内部需要更新远端状态时，是否统一调用专用 `/git-fetch` skill，替代直接执行 `git fetch`。
-- 用户原始表述为 `/git-ferch`，专用 skill 的准确命名需要确认；当前暂不据此创建或调用该 skill。
-- 评估内容：专用 skill 是否已存在、是否支持多远程和 upstream、失败与网络中断如何返回、如何避免多个 skill 重复 fetch，以及其行为如何服从 `repository_relation_mode`。
-- 状态：待处理，不在本次审查中决定。
+- 专用 skill 已实施：`/git-fetch`（`.claude/skills/git-fetch/SKILL.md`，原语层，命名已定），五项评估回应如下：
+  - 是否已存在 → 已实施入暂存区（0.4.0）；
+  - 多远程与 upstream → `--remote` 参数 + 目标解析优先级（参数 > upstream > 单 remote > 终止），见设计第 2–3 节；
+  - 失败与网络中断返回 → 明确失败出口表，认证/权限/网络错误原样报告不重试，见设计第 6 节；
+  - 避免重复 fetch → 委托方消费返回契约、不复制逻辑；task-init 跳过机制覆盖同任务重复调用；
+  - 服从 `repository_relation_mode` → prune 默认与模式挂钩（same_repository 自动开）。
+- 余留：各 skill 内部尚未切换为委托 `/git-fetch`——git-push Step 3b 仍为内联强制 refspec（设计明确本期不改造、仅预留契约），改造另行评估；pull 自动化边界未定（fetch + 合并组合，合并语义不属 fetch 原语）。
