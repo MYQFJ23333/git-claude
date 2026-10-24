@@ -1,7 +1,7 @@
 {
-  "version": "0.3.2",
+  "version": "0.3.3",
   "created_at": "2026-09-27",
-  "updated_at": "2026-10-21",
+  "updated_at": "2026-10-24",
   "rules": {
     "project": {
       "repository_relation_mode": {
