@@ -6,13 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指令构成（无源码、无依赖、无构建、无测试、无 CI）。受众是所有同时使用 Git 与 Claude Code 的人。README 标注本项目处于极早期版本，配置格式和目录结构可能变化。
 
-四个 skill 位于 `.claude/skills/`，在本仓库会话中可直接调用：
+五个 skill 位于 `.claude/skills/`，在本仓库会话中可直接调用：
 
 | skill | 分工 |
 | --- | --- |
 | `/git-help` | 只读导览：list / detail / advice 三分支，按参数分派，不修改仓库 |
 | `/git-rules` | 规则配置中心：show / set / reset / init / repair / calibrate / ask / export / import |
 | `/git-commit` | 六步提交流程：环境与规则 → 暂存分析 → message → 提交 → 远程同步 → 报告 |
+| `/git-fetch` | fetch 原语：机械更新 remote-tracking 引用，按 repository_relation_mode 挂钩 prune，检测远端历史改写信号，输出返回契约供任务流委托（git-push 的远程状态更新经此委托） |
 | `/git-push` | 五步推送流程：环境与规则 → 解析目标 → 分叉检测 → 执行推送 → 报告 |
 
 ## 常用命令
@@ -71,11 +72,16 @@ git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指�
 
 ### 跨技能协议块（blocks/）
 
-`.claude/skills/git-rules/references/blocks/` 存放跨技能共享的可执行协议块。当前唯一块 `task-init.md`（任务初始化：git 环境与操作状态检查 + 配置快照；配置协议定义权威仍在 git-rules SKILL.md 的 Configuration snapshot and recovery 节）。通用「执行与跳过」机制由 task-init 块单点保管：后续新增块只写自身执行内容，跳过语义按其通用机制执行，不各自复制该节。
+`.claude/skills/git-rules/references/blocks/` 存放跨技能共享的协议块。当前两块：
+
+- `task-init.md`（任务初始化：git 环境与操作状态检查 + 配置快照，可执行步骤；配置协议定义权威仍在 git-rules SKILL.md 的 Configuration snapshot and recovery 节）；
+- `error-principles.md`（跨技能错误处理不变量，无执行步骤、读取即生效；各技能的出口词汇定义与流程内错误分支仍在技能正文）。
+
+通用「执行与跳过」机制由 task-init 块单点保管：后续新增块只写自身执行内容，跳过语义按其通用机制执行，不各自复制该节。
 
 编写与引用约定（写给技能编写者，不进块文件）：
 
-- 任务流技能（git-commit、git-push 及未来的任务流/原语技能）在 Step 1 调用 task-init 并声明所需 value JSON Pointer 清单（可为空，为空时块只做版本与配置健康检查）；git-help（只读导览，不碰仓库状态）与 git-rules（协议定义权威，正文内嵌）豁免；
+- 任务流技能（git-commit、git-push、git-fetch 及未来的任务流/原语技能）在 Step 1 调用 task-init 并声明所需 value JSON Pointer 清单（可为空，为空时块只做版本与配置健康检查），并在「错误处理原则」节调用 error-principles（一行调用 + 缺失即终止声明，不复制不变量）；git-help（只读导览，不碰仓库状态）与 git-rules（协议定义权威，正文内嵌）两块均豁免；
 - 引用方只写一行调用 + value 清单 + 自身特有语义，不复制块内文字；引用行必须声明「块文件缺失、为空或不可读时终止任务，不自动创建或猜测块内容」；
 - 技能特有语义（如 git-push 的「工作区更改不阻止推送」）留在技能内，不并入块；
 - 新增协议块时更新本节列举；被委托技能经块内跳过规则自动去重，调用方无需附加声明。
@@ -136,3 +142,4 @@ git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指�
 - **误解「通用」的含义**：错误在于把「对大部分项目通用」理解为技能需要兼容无 git-rules 的环境并设计降级分支。正确理解：「通用」指每个技能都足够抽象，可应用于采用不同 Git 管理方案的项目，用于简化甚至自动化该项目的 Git 管理流程。做法：技能设计一律假设套装（git-rules + 全部技能）完整安装，不设计无配置降级路径；目标项目之间的差异由技能参数与 git-rules 规则吸收。
 - **写入非项目路径**：错误在于把计划、草稿等过程产物写到项目目录之外的路径。正确做法：过程产物一律写入本仓库 `scratch/`（草稿箱）；除非用户明确要求，禁止创建、修改或删除项目目录之外的文件（**尤其是 C:/Users/13199/.claude 等全局路径**）。
 - **主动维护版本号**：错误在于把迭代 VERSION patch 号当作修改 skill 内容后的自动义务。正确理解：版本号由用户维护，无需 Claude Code 维护。做法：除非用户明确要求，不修改 `.claude/skills/git-rules/VERSION`，也不为内容变更主动迭代版本号；「版本规则」一节仅作项目背景知识，不构成 Claude 的操作指令。
+- **把运行时语义写进开发侧文档**：错误在于把「出错后执行」这一运行时触发时机写进 error-principles 块自述和本仓库 CLAUDE.md 的块枚举。正确理解：本项目的 Claude 负责开发这个库，不是执行这个库的工具——何时读取块属于运行时语义，应写在面向目标项目的产品文件（技能正文的调用行）；块文件只承载约束内容本身，本仓库 CLAUDE.md 只承载开发与维护约定。做法：调用行写明「出错后执行」并声明加载技能时不预读，防止执行侧模型默认预读该块。
