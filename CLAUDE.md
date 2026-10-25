@@ -6,13 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指令构成（无源码、无依赖、无构建、无测试、无 CI）。受众是所有同时使用 Git 与 Claude Code 的人。README 标注本项目处于极早期版本，配置格式和目录结构可能变化。
 
-四个 skill 位于 `.claude/skills/`，在本仓库会话中可直接调用：
+五个 skill 位于 `.claude/skills/`，在本仓库会话中可直接调用：
 
 | skill | 分工 |
 | --- | --- |
 | `/git-help` | 只读导览：list / detail / advice 三分支，按参数分派，不修改仓库 |
 | `/git-rules` | 规则配置中心：show / set / reset / init / repair / calibrate / ask / export / import |
 | `/git-commit` | 六步提交流程：环境与规则 → 暂存分析 → message → 提交 → 远程同步 → 报告 |
+| `/git-fetch` | fetch 原语：机械更新 remote-tracking 引用，按 repository_relation_mode 挂钩 prune，检测远端历史改写信号，输出返回契约供任务流委托（git-push 的远程状态更新经此委托） |
 | `/git-push` | 五步推送流程：环境与规则 → 解析目标 → 分叉检测 → 执行推送 → 报告 |
 
 ## 常用命令
@@ -80,7 +81,7 @@ git-claude 是一组面向 Claude Code 的 Git Skills，全部由 Markdown 指�
 
 编写与引用约定（写给技能编写者，不进块文件）：
 
-- 任务流技能（git-commit、git-push 及未来的任务流/原语技能）在 Step 1 调用 task-init 并声明所需 value JSON Pointer 清单（可为空，为空时块只做版本与配置健康检查），并在「错误处理原则」节调用 error-principles（一行调用 + 缺失即终止声明，不复制不变量）；git-help（只读导览，不碰仓库状态）与 git-rules（协议定义权威，正文内嵌）两块均豁免；
+- 任务流技能（git-commit、git-push、git-fetch 及未来的任务流/原语技能）在 Step 1 调用 task-init 并声明所需 value JSON Pointer 清单（可为空，为空时块只做版本与配置健康检查），并在「错误处理原则」节调用 error-principles（一行调用 + 缺失即终止声明，不复制不变量）；git-help（只读导览，不碰仓库状态）与 git-rules（协议定义权威，正文内嵌）两块均豁免；
 - 引用方只写一行调用 + value 清单 + 自身特有语义，不复制块内文字；引用行必须声明「块文件缺失、为空或不可读时终止任务，不自动创建或猜测块内容」；
 - 技能特有语义（如 git-push 的「工作区更改不阻止推送」）留在技能内，不并入块；
 - 新增协议块时更新本节列举；被委托技能经块内跳过规则自动去重，调用方无需附加声明。

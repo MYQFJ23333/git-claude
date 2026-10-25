@@ -154,7 +154,7 @@ custom 标准文件缺失、为空或无法读取时停止，并提示需要配�
 2. 执行 git branch --show-current 并检查退出码；命令失败时报告原始错误并结束远程阶段；退出码 0 且输出为空表示 detached HEAD，报告本地 commit 成功、未执行远程操作，进入 Step 6；退出码 0 且非空时记录 CURRENT_BRANCH。
 3. same_repository：直接进入 Step 5c 委托执行。
 4. independent_repositories：
-   - 执行 git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 并检查退出码；退出码非 0 且错误信息为 "no upstream configured" 时视为没有 upstream，不视为命令失败；其他失败必须报告并结束远程阶段，不得把未知错误当作无 upstream；
+   - 执行 git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 并检查退出码；退出码非 0 且错误信息含 "no upstream configured" 判定特征时视为没有 upstream，不视为命令失败；其他失败必须报告并结束远程阶段，不得把未知错误当作无 upstream；
    - 存在 upstream 时，通过 branch.CURRENT_BRANCH.remote 和 branch.CURRENT_BRANCH.merge 取得明确的 remote 和 branch，进入 Step 5c 委托执行；
    - 没有 upstream 时：不猜测目标，报告缺少 upstream 并跳过自动推送，进入 Step 6。
 
@@ -181,4 +181,4 @@ custom 标准文件缺失、为空或无法读取时停止，并提示需要配�
 
 ## 错误处理原则
 
-出错后执行 `.claude/skills/git-rules/references/blocks/error-principles.md`——跨技能错误处理不变量在块内，加载技能时不预读；块文件缺失、为空或不可读时终止任务，不自动创建或猜测块内容。
+任何步骤**出错后**执行 `.claude/skills/git-rules/references/blocks/error-principles.md`——跨技能错误处理不变量在块内，加载技能时不预读；块文件缺失、为空或不可读时终止任务，不自动创建或猜测块内容。

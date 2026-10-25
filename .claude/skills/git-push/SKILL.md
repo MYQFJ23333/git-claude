@@ -49,7 +49,7 @@ license: MIT
    - 退出码 0 且输出为空表示 detached HEAD；此时必须同时提供 `--remote` 和 `--branch` 才能继续，否则报告原因并结束远程阶段，进入 Step 5。参数完整时设置 LOCAL_REF=HEAD，直接采用参数中的 REMOTE 和 BRANCH，跳过 upstream 查询和目标推断，直接进入 Step 2c；
    - 退出码 0 且非空时记录 CURRENT_BRANCH，设置 LOCAL_REF=CURRENT_BRANCH，继续第 3 项。
 3. 仅在 CURRENT_BRANCH 非空时执行 git rev-parse --abbrev-ref --symbolic-full-name '@{u}'：
-   - 退出码非 0 且错误信息为 "no upstream configured"（该场景实际退出码为 128）表示没有 upstream，不视为命令失败；
+   - 退出码非 0 且错误信息含 "no upstream configured" 判定特征（该场景实际退出码为 128）表示没有 upstream，不视为命令失败；
    - 其他失败必须报告并结束远程阶段，进入 Step 5，不得把未知错误当作无 upstream；
    - 有 upstream 时，通过 branch.CURRENT_BRANCH.remote 和 branch.CURRENT_BRANCH.merge 取得明确的 remote 和 branch。
 
@@ -88,8 +88,8 @@ license: MIT
 
 ### Step 3b: 更新远端状态
 
-1. 执行 git fetch REMOTE +refs/heads/BRANCH:refs/remotes/REMOTE/BRANCH；refspec 必须带 `+` 前缀，使 remote-tracking ref 无条件反映远端当前状态。失败时结束远程阶段，进入 Step 5，并报告原始错误。
-2. 执行 git rev-parse refs/remotes/REMOTE/BRANCH 取得远端当前提交并记录为 EXPECTED_REMOTE_OID，作为 Step 4 强推路径绑定的期望值；失败时结束远程阶段，进入 Step 5，报告原始错误。
+1. 调用 /git-fetch --remote REMOTE --branch BRANCH --force 委托更新远端状态；--force 保证 remote-tracking ref 无条件反映远端当前状态，prune 行为由 git-fetch 按 repository_relation_mode 默认处理。git-fetch 终止任务（含其内部错误或用户取消）时，报告其原因并结束远程阶段，进入 Step 5。
+2. 从契约字段 NEW_OID 取得远端当前提交并记录为 EXPECTED_REMOTE_OID，作为 Step 4 强推路径绑定的期望值；字段缺失或不可用时结束远程阶段，进入 Step 5，报告契约不完整，不自行 rev-parse 补取。
 3. 执行 git rev-list --left-right --count REMOTE/BRANCH...LOCAL_REF 取得 behind/ahead 数量（左侧为远端独有提交，右侧为本地独有提交）；失败时结束远程阶段，进入 Step 5。
 4. 按结果处理：
    - behind=0 且 ahead>0：快进推送。展示将推送的提交（git log --oneline REMOTE/BRANCH..LOCAL_REF，超过 20 条时截断并报告总数；命令失败时结束远程阶段，进入 Step 5），进入 Step 4；
@@ -120,7 +120,7 @@ license: MIT
 ### Step 4c: 执行与失败处理
 
 1. 执行推送并检查退出码。
-2. 成功后执行 git log --oneline -n 1 并检查退出码，报告推送结果；该命令失败时如实说明推送已成功但日志读取失败，不视为推送失败。CURRENT_BRANCH 非空时，再执行 git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 取得跟踪关系；退出码非 0 且错误信息为 "no upstream configured" 时跳过跟踪关系报告，不视为失败，其他失败必须报告。detached HEAD 不执行 upstream 查询，直接说明此次推送未设置跟踪关系。
+2. 成功后执行 git log --oneline -n 1 并检查退出码，报告推送结果；该命令失败时如实说明推送已成功但日志读取失败，不视为推送失败。CURRENT_BRANCH 非空时，再执行 git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 取得跟踪关系；退出码非 0 且错误信息含 "no upstream configured" 判定特征时跳过跟踪关系报告，不视为失败，其他失败必须报告。detached HEAD 不执行 upstream 查询，直接说明此次推送未设置跟踪关系。
 3. 非零退出时按类型处理：
    - 认证、权限、网络和 hook 错误：显示原始错误，不自动重试，结束远程阶段，进入 Step 5；
    - 非快进被拒（远端在检测后再次变化），或强推因 lease 过期被拒（"stale info"、cannot lock ref 等）：不自动重试，返回整个 Step 3——从 3a 的 ls-remote 起重新确认远程分支存在性与状态——按最新状态重新展示预警并等待用户选择，重新确认前不执行任何推送；
@@ -134,12 +134,13 @@ license: MIT
 - upstream 是否已设置或新建跟踪关系；本次推送目标与现有 upstream 不一致时，明确说明未更改跟踪关系；
 - detached HEAD 时说明未设置 upstream 的原因；
 - 是否放弃推送、远端分叉状态，以及建议的后续流程；
+- 委托 fetch 顺带清理的 remote-tracking ref（git-fetch 契约 PRUNED_REFS 非空时列出）；
 - 已同步时明确报告无需操作；
 - 工作区是否存在未提交或未跟踪更改（不随本次推送上传）。
 
 ## 错误处理原则
 
-出错后执行 `.claude/skills/git-rules/references/blocks/error-principles.md`——跨技能错误处理不变量在块内，加载技能时不预读；块文件缺失、为空或不可读时终止任务，不自动创建或猜测块内容。
+任何步骤**出错后**执行 `.claude/skills/git-rules/references/blocks/error-principles.md`——跨技能错误处理不变量在块内，加载技能时不预读；块文件缺失、为空或不可读时终止任务，不自动创建或猜测块内容。
 
 出口词汇（全文统一）：
 
