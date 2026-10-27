@@ -46,6 +46,7 @@ Skill registry 是本 skill 唯一的数据来源，只列出本仓库实际存�
 | --- | --- | --- |
 | git-commit | /git-commit [message] | 分析暂存内容，按项目规则生成或校验 commit message，执行提交前安全预检，并按远程协作策略处理提交后的同步 |
 | git-fetch | /git-fetch [--remote REMOTE] [--branch BRANCH] [--force] [--prune \| --no-prune] | fetch 原语 - 机械更新 remote-tracking 引用（全分支或单分支），按 repository_relation_mode 挂钩 prune，检测远端历史改写信号，输出标准化返回契约供任务流委托，也可由用户直接调用 |
+| git-help | /git-help [<skill-name>\|<问题描述>] | Git Skills 导览 - 无参数时列出当前可用的技能清单，传入技能名时说明该技能的作用和用法，传入问题时分析问题并推荐分步解决流程及每一步应使用的技能 |
 | git-push | /git-push [--remote REMOTE] [--branch BRANCH] | 解析目标远程与分支，更新远程状态并预警分叉，按远程协作策略执行推送并自动设置 upstream，仅提供 force-with-lease 安全强推 |
 | git-rules | /git-rules <命令> | 管理项目级规则配置 .claude/git-claude-rules.json，支持 show、set、reset、init、repair、calibrate、ask、export、import |
 
