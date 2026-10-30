@@ -41,11 +41,8 @@
 - 任务流技能在开始时执行 `.claude/skills/git-rules/references/blocks/task-init.md` 初始化块（git 环境与操作状态检查、配置快照）：版本一致时只缓存本次任务需要的配置值，不预先扫描或校验完整规则清单；同一任务内的委托链不会重复执行该块。
 - 配置缺失、损坏或版本不一致时，初始化块会按需调用 `/git-rules repair` 或 `/git-rules calibrate`。
 - 跨技能错误处理不变量统一定义在 `.claude/skills/git-rules/references/blocks/error-principles.md`，各任务流技能出错时读取并遵循。
-<<<<<<< HEAD
 - 暂存内容检查标准统一存放在 `.claude/standards/staged-content-checks.md`；自定义 commit message 格式可写入本地的 `.claude/standards/commit-message-format.md`。
-=======
 - 暂存内容检查标准统一存放在 `.claude/standards/staged-content-checks.md`；自定义 commit message 格式规范存放在 `.claude/standards/commit-message-format.md`。
->>>>>>> main
 
 ## 基本使用
 
