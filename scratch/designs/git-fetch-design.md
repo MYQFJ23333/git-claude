@@ -1,6 +1,6 @@
 # git-fetch 概念设计
 
-状态：概念设计（已定稿，待实施） · 归属：待定（版本由用户维护） · 上游方案：`scratch/notes/remote-repository-policy.md`（待办五项评估）；原语层预定位见 `scratch/designs/release-flow-generic-skills-design.md`
+状态：已实施（本体 0.4.0；git-push 委托改造与正式面同步均已完成，义务闭环） · 归属：原语层（版本由用户维护） · 上游方案：`scratch/notes/remote-repository-policy.md`（五项评估已回应闭环）；原语层预定位见 `scratch/designs/release-flow-generic-skills-design.md`
 
 ## 1. 定位
 
